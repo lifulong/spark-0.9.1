@@ -28,11 +28,11 @@ object SparkBuild extends Build {
   // Hadoop version to build against. For example, "1.0.4" for Apache releases, or
   // "2.0.0-mr1-cdh4.2.0" for Cloudera Hadoop. Note that these variables can be set
   // through the environment variables SPARK_HADOOP_VERSION and SPARK_YARN.
-  val DEFAULT_HADOOP_VERSION = "1.0.4"
+  val DEFAULT_HADOOP_VERSION = "2.2.0"
 
   // Whether the Hadoop version to build against is 2.2.x, or a variant of it. This can be set
   // through the SPARK_IS_NEW_HADOOP environment variable.
-  val DEFAULT_IS_NEW_HADOOP = false
+  val DEFAULT_IS_NEW_HADOOP = true
 
   val DEFAULT_YARN = false
 
@@ -264,6 +264,7 @@ object SparkBuild extends Build {
 
     libraryDependencies ++= Seq(
         "com.google.guava"         % "guava"            % "14.0.1",
+	"org.apache.commons"       % "commons-lang3"    % "3.3.2",
         "com.google.code.findbugs" % "jsr305"           % "1.3.9",
         "log4j"                    % "log4j"            % "1.2.17",
         "org.slf4j"                % "slf4j-api"        % slf4jVersion,
@@ -290,7 +291,8 @@ object SparkBuild extends Build {
         "com.codahale.metrics"     % "metrics-graphite" % "3.0.0",
         "com.twitter"             %% "chill"            % "0.3.1",
         "com.twitter"              % "chill-java"       % "0.3.1",
-        "com.clearspring.analytics" % "stream"          % "2.5.1"
+        "com.clearspring.analytics" % "stream"          % "2.5.1",
+	"net.sf.py4j"               % "py4j"            % "0.8.1"
       )
   )
 
@@ -396,7 +398,7 @@ object SparkBuild extends Build {
   )
 
   def assemblyProjSettings = sharedSettings ++ Seq(
-    libraryDependencies += "net.sf.py4j" % "py4j" % "0.8.1",
+    // libraryDependencies += "net.sf.py4j" % "py4j" % "0.8.1",
     name := "spark-assembly",
     scalastyleTask,
     assembleDeps in Compile <<= (packageProjects.map(packageBin in Compile in _) ++ Seq(packageDependency in Compile)).dependOn,
