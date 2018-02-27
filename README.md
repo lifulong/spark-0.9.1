@@ -9,6 +9,11 @@ You can find the latest Spark documentation, including a programming
 guide, on the project webpage at <http://spark.apache.org/documentation.html>.
 This README file only contains basic setup instructions.
 
+# Quick build
+
+To build a spark distribute run command below:
+
+bash make-distribution.sh
 
 ## Building
 
@@ -53,6 +58,18 @@ Hadoop, you must build Spark against the same version that your cluster runs.
 You can change the version by setting the `SPARK_HADOOP_VERSION` environment
 when building Spark.
 
+For Apache Hadoop 2.2.X, 2.1.X, 2.0.X, 0.23.x, Cloudera CDH MRv2, and other Hadoop versions
+with YARN, also set `SPARK_YARN=true`:
+
+    # Apache Hadoop 2.2.X and newer
+    $ SPARK_HADOOP_VERSION=2.2.0 SPARK_YARN=true sbt/sbt assembly
+
+    # Apache Hadoop 2.0.5-alpha
+    $ SPARK_HADOOP_VERSION=2.0.5-alpha SPARK_YARN=true sbt/sbt assembly
+
+    # Cloudera CDH 4.2.0 with MapReduce v2
+    $ SPARK_HADOOP_VERSION=2.0.0-cdh4.2.0 SPARK_YARN=true sbt/sbt assembly
+
 For Apache Hadoop versions 1.x, Cloudera CDH MRv1, and other Hadoop
 versions without YARN, use:
 
@@ -62,31 +79,19 @@ versions without YARN, use:
     # Cloudera CDH 4.2.0 with MapReduce v1
     $ SPARK_HADOOP_VERSION=2.0.0-mr1-cdh4.2.0 sbt/sbt assembly
 
-For Apache Hadoop 2.2.X, 2.1.X, 2.0.X, 0.23.x, Cloudera CDH MRv2, and other Hadoop versions
-with YARN, also set `SPARK_YARN=true`:
-
-    # Apache Hadoop 2.0.5-alpha
-    $ SPARK_HADOOP_VERSION=2.0.5-alpha SPARK_YARN=true sbt/sbt assembly
-
-    # Cloudera CDH 4.2.0 with MapReduce v2
-    $ SPARK_HADOOP_VERSION=2.0.0-cdh4.2.0 SPARK_YARN=true sbt/sbt assembly
-
-    # Apache Hadoop 2.2.X and newer
-    $ SPARK_HADOOP_VERSION=2.2.0 SPARK_YARN=true sbt/sbt assembly
-
 When developing a Spark application, specify the Hadoop version by adding the
 "hadoop-client" artifact to your project's dependencies. For example, if you're
 using Hadoop 1.2.1 and build your application using SBT, add this entry to
 `libraryDependencies`:
 
-    "org.apache.hadoop" % "hadoop-client" % "1.2.1"
+    "org.apache.hadoop" % "hadoop-client" % "2.2.0"
 
 If your project is built with Maven, add this to your POM file's `<dependencies>` section:
 
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-client</artifactId>
-      <version>1.2.1</version>
+      <version>2.2.0</version>
     </dependency>
 
 
