@@ -1,6 +1,9 @@
 Spark Change Log
 ----------------
 
+2018-02-27 Don't require SPARK_YARN_APP_JAR
+2018-02-27 support spark-submit command
+
 Release 0.9.1
 
   Revert "[maven-release-plugin] prepare release v0.9.1-rc2"

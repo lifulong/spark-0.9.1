@@ -9,11 +9,15 @@ You can find the latest Spark documentation, including a programming
 guide, on the project webpage at <http://spark.apache.org/documentation.html>.
 This README file only contains basic setup instructions.
 
-# Quick build
+## Quick build
 
 To build a spark distribute run command below:
 
 bash make-distribution.sh
+
+Need yarn support:
+
+bash make-distribution.sh --with-yarn
 
 ## Building
 
