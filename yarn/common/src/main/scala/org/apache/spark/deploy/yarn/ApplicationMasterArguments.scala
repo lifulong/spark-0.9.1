@@ -27,6 +27,7 @@ class ApplicationMasterArguments(val args: Array[String]) {
   var workerMemory = 1024
   var workerCores = 1
   var numWorkers = 2
+  var propertiesFile: String = null
 
   parseArgs(args.toList)
   
@@ -60,6 +61,10 @@ class ApplicationMasterArguments(val args: Array[String]) {
 
         case ("--worker-cores") :: IntParam(value) :: tail =>
           workerCores = value
+          args = tail
+
+        case ("--properties-file") :: value :: tail =>
+          propertiesFile = value
           args = tail
 
         case Nil =>

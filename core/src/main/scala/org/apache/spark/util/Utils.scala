@@ -19,10 +19,12 @@ package org.apache.spark.util
 
 import java.io._
 import java.net.{InetAddress, URL, URI, NetworkInterface, Inet4Address}
-import java.util.{Locale, Random, UUID}
+import java.util.{Locale, Random, UUID, Properties}
 import java.util.concurrent.{ConcurrentHashMap, Executors, ThreadPoolExecutor}
 
+//https://stackoverflow.com/questions/8301947/what-is-the-difference-between-javaconverters-and-javaconversions-in-scala
 import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.collection.Map
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
@@ -946,5 +948,53 @@ private[spark] object Utils extends Logging {
     }
   }
 
+  /**
+   * Load default Spark properties from the given file. If no file is provided,
+   * use the common defaults file. This mutates state in the given SparkConf and
+   * in this JVM's system properties if the config specified in the file is not
+   * already set. Return the path of the properties file used.
+   */
+  def loadDefaultSparkProperties(conf: SparkConf, filePath: String = null): String = {
+    val path = Option(filePath).getOrElse(getDefaultPropertiesFile())
+    Option(path).foreach { confFile =>
+      getPropertiesFromFile(confFile).filter { case (k, v) =>
+        k.startsWith("spark.")
+      }.foreach { case (k, v) =>
+        conf.setIfMissing(k, v)
+        sys.props.getOrElseUpdate(k, v)
+      }
+    }
+    path
+  }
+
+  /** Load properties present in the given file. */
+  def getPropertiesFromFile(filename: String): Map[String, String] = {
+    val file = new File(filename)
+    require(file.exists(), s"Properties file $file does not exist")
+    require(file.isFile(), s"Properties file $file is not a normal file")
+
+    val inReader = new InputStreamReader(new FileInputStream(file), "UTF-8")
+    try {
+      val properties = new Properties()
+      properties.load(inReader)
+      properties.stringPropertyNames().asScala.map(
+        k => (k, properties.getProperty(k).trim)).toMap
+    } catch {
+      case e: IOException =>
+        throw new SparkException(s"Failed when loading Spark properties from $filename", e)
+    } finally {
+      inReader.close()
+    }
+  }
+
+  /** Return the path of the default Spark properties file. */
+  def getDefaultPropertiesFile(env: Map[String, String] = sys.env): String = {
+    env.get("SPARK_CONF_DIR")
+      .orElse(env.get("SPARK_HOME").map { t => s"$t${File.separator}conf" })
+      .map { t => new File(s"$t${File.separator}spark-defaults.conf")}
+      .filter(_.isFile)
+      .map(_.getAbsolutePath)
+      .orNull
+  }
 
 }

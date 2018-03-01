@@ -19,10 +19,16 @@ package org.apache.spark.deploy.yarn
 
 import java.net.{InetAddress, UnknownHostException, URI}
 import java.nio.ByteBuffer
+import java.io.{ByteArrayInputStream, DataInputStream, File, FileOutputStream, IOException, OutputStreamWriter}
+import java.util.zip.{ZipEntry, ZipOutputStream}
+import java.util.Properties
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.Map
+
+import com.google.common.base.Charsets.UTF_8
+import com.google.common.io.Files
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileContext, FileStatus, FileSystem, Path, FileUtil}
@@ -40,7 +46,7 @@ import org.apache.hadoop.yarn.conf.YarnConfiguration
 import org.apache.hadoop.yarn.ipc.YarnRPC
 import org.apache.hadoop.yarn.util.{Apps, Records}
 
-import org.apache.spark.{Logging, SparkConf, SparkContext}
+import org.apache.spark.{Logging, SparkConf, SparkContext, SparkException}
 import org.apache.spark.util.Utils
 import org.apache.spark.deploy.SparkHadoopUtil
 
@@ -65,9 +71,9 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
   private val distCacheMgr = new ClientDistributedCacheManager()
 
   // Staging directory is private! -> rwx--------
-  val STAGING_DIR_PERMISSION: FsPermission = FsPermission.createImmutable(0700: Short)
+  val STAGING_DIR_PERMISSION: FsPermission = FsPermission.createImmutable(Integer.parseInt("700", 8).toShort)
   // App files are world-wide readable and owner writable -> rw-r--r--
-  val APP_FILE_PERMISSION: FsPermission = FsPermission.createImmutable(0644: Short)
+  val APP_FILE_PERMISSION: FsPermission = FsPermission.createImmutable(Integer.parseInt("644", 8).toShort)
 
   def runApp(): ApplicationId = {
     validateArgs()
@@ -318,8 +324,114 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       }
     }
 
+    // Handle distributed spark conf files(Need more work, now support only spark-defults.conf)
+    // Distribute an archive with Hadoop and Spark configuration for the AM.
+    if (true) {
+      val confFileName = "spark-defaults.conf"
+      Option(Utils.getContextOrSparkClassLoader.getResource(confFileName)).foreach { url =>
+        if (url.getProtocol == "file") {
+          var localFile = url.getPath
+          var localURI = new URI(localFile)
+          // If not specified assume these are in the local filesystem to keep behavior like Hadoop
+          if (localURI.getScheme() == null) {
+            localURI = new URI(FileSystem.getLocal(conf).makeQualified(new Path(localFile)).toString)
+          }
+          val localPath = new Path(localURI)
+          val linkname = Option(localURI.getFragment()).getOrElse(localPath.getName())
+          val destPath = copyRemoteFile(dst, new Path(localURI), replication)
+          distCacheMgr.addResource(fs, conf, destPath, localResources, LocalResourceType.ARCHIVE,
+            linkname, statCache)
+        }
+      }
+
+      /*
+      val localURI = new URI(createConfArchive().toString)
+      val localPath = new Path(localURI)
+      val linkname = Option(localURI.getFragment()).getOrElse(localPath.getName())
+      val destPath = copyRemoteFile(dst, localPath, replication)
+      */
+    }
+
     UserGroupInformation.getCurrentUser().addCredentials(credentials)
     localResources
+  }
+
+  /**
+   * Create an archive with the config files for distribution.
+   *
+   * These are only used by the AM, since executors will use the configuration object broadcast by
+   * the driver. The files are zipped and added to the job as an archive, so that YARN will explode
+   * it when distributing to the AM. This directory is then added to the classpath of the AM
+   * process, just to make sure that everybody is using the same default config.
+   *
+   * This follows the order of precedence set by the startup scripts, in which HADOOP_CONF_DIR
+   * shows up in the classpath before YARN_CONF_DIR.
+   *
+   * Currently this makes a shallow copy of the conf directory. If there are cases where a
+   * Hadoop config directory contains subdirectories, this code will have to be fixed.
+   *
+   * The archive also contains some Spark configuration. Namely, it saves the contents of
+   * SparkConf in a file to be loaded by the AM process.
+   */
+  private def createConfArchive(): File = {
+    val hadoopConfFiles = new HashMap[String, File]()
+
+    // Uploading $SPARK_CONF_DIR/log4j.properties file to the distributed cache to make sure that
+    // the executors will use the latest configurations instead of the default values. This is
+    // required when user changes log4j.properties directly to set the log configurations. If
+    // configuration file is provided through --files then executors will be taking configurations
+    // from --files instead of $SPARK_CONF_DIR/log4j.properties.
+    val log4jFileName = "log4j.properties"
+    Option(Utils.getContextOrSparkClassLoader.getResource(log4jFileName)).foreach { url =>
+      if (url.getProtocol == "file") {
+        hadoopConfFiles(log4jFileName) = new File(url.getPath)
+      }
+    }
+
+    Seq("HADOOP_CONF_DIR", "YARN_CONF_DIR").foreach { envKey =>
+      sys.env.get(envKey).foreach { path =>
+        val dir = new File(path)
+        if (dir.isDirectory()) {
+          val files = dir.listFiles()
+          if (files == null) {
+            logWarning("Failed to list files under directory " + dir)
+          } else {
+            files.foreach { file =>
+              if (file.isFile && !hadoopConfFiles.contains(file.getName())) {
+                hadoopConfFiles(file.getName()) = file
+              }
+            }
+          }
+        }
+      }
+    }
+
+    val confArchive = File.createTempFile(Client.LOCALIZED_CONF_DIR, ".zip",
+      new File(Utils.getLocalDir(sparkConf)))
+    val confStream = new ZipOutputStream(new FileOutputStream(confArchive))
+
+    try {
+      confStream.setLevel(0)
+      hadoopConfFiles.foreach { case (name, file) =>
+        if (file.canRead()) {
+          confStream.putNextEntry(new ZipEntry(name))
+          Files.copy(file, confStream)
+          confStream.closeEntry()
+        }
+      }
+
+      // Save Spark configuration to a file in the archive.
+      val props = new Properties()
+      sparkConf.getAll.foreach { case (k, v) => props.setProperty(k, v) }
+      confStream.putNextEntry(new ZipEntry(Client.SPARK_CONF_FILE))
+      val writer = new OutputStreamWriter(confStream, UTF_8)
+      props.store(writer, "Spark configuration.")
+      writer.flush()
+      confStream.closeEntry()
+    } finally {
+      confStream.close()
+    }
+    confArchive
   }
 
   def setupLaunchEnv(
@@ -344,6 +456,27 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
 
     // Add each SPARK_* key to the environment.
     System.getenv().filterKeys(_.startsWith("SPARK")).foreach { case (k,v) => env(k) = v }
+
+    sys.env.get("SPARK_JAVA_OPTS").foreach { value =>
+      val warning =
+        s""" 
+          |SPARK_JAVA_OPTS was detected (set to '$value').
+          |This is deprecated in Spark 1.0+.
+          |    
+          |Please instead use: 
+          | - ./spark-submit with conf/spark-defaults.conf to set defaults for an application
+          | - ./spark-submit with --driver-java-options to set -X options for a driver
+          | - spark.executor.extraJavaOptions to set -X options for executors
+        """.stripMargin
+      logWarning(warning)
+      for (proc <- Seq("driver", "executor")) {
+        val key = s"spark.$proc.extraJavaOptions"
+        if (sparkConf.contains(key)) {
+          throw new SparkException(s"Found both $key and SPARK_JAVA_OPTS. Use only the former.")
+        }    
+      }    
+      env("SPARK_JAVA_OPTS") = value
+    }
 
     env
   }
@@ -423,10 +556,12 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       " --worker-memory " + args.workerMemory +
       " --worker-cores " + args.workerCores +
       " --num-workers " + args.numWorkers +
+      " --properties-file " + Client.buildPath(YarnSparkHadoopUtil.expandEnvironment(Environment.PWD), "spark-defaults.conf") +
       " 1> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout" +
       " 2> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr")
 
     logInfo("Command for starting the Spark ApplicationMaster: " + commands(0))
+    logInfo("LIFULONG add log:Command for starting the Spark ApplicationMaster: " + commands(0))
     amContainer.setCommands(commands)
 
     // Setup security tokens.
@@ -482,6 +617,12 @@ object Client {
   val APP_JAR: String = "app.jar"
   val LOG4J_PROP: String = "log4j.properties"
 
+  // FIXED: add by lifulong
+  // Subdirectory where the user's Spark and Hadoop config files will be placed.
+  val LOCALIZED_CONF_DIR = "__spark_conf__"
+  // Name of the file in the conf archive containing Spark configuration.
+  val SPARK_CONF_FILE = "__spark_conf__.properties"
+
   def main(argStrings: Array[String]) {
     // Set an env variable indicating we are running in YARN mode.
     // Note: anything env variable with SPARK_ prefix gets propagated to all (remote) processes -
@@ -525,4 +666,12 @@ object Client {
     Apps.addToEnvironment(env, Environment.CLASSPATH.name, Environment.PWD.$() +
       Path.SEPARATOR + "*")
   }
+
+  /**
+   * Joins all the path components using Path.SEPARATOR.
+   */
+  def buildPath(components: String*): String = {
+    components.mkString(Path.SEPARATOR)
+  }
+
 }

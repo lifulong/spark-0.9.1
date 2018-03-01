@@ -17,11 +17,15 @@
 
 package org.apache.spark.deploy.yarn
 
+import scala.util.Try
+
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.security.UserGroupInformation
 import org.apache.hadoop.yarn.conf.YarnConfiguration
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.yarn.api.ApplicationConstants                                                                                      
+import org.apache.hadoop.yarn.api.ApplicationConstants.Environment
 
 /**
  * Contains util methods to interact with Hadoop from spark.
@@ -44,4 +48,38 @@ class YarnSparkHadoopUtil extends SparkHadoopUtil {
     val jobCreds = conf.getCredentials()
     jobCreds.mergeAll(UserGroupInformation.getCurrentUser().getCredentials())
   }
+
+}
+
+object YarnSparkHadoopUtil {
+  //FIXED: Support uinx/linux only (Add by lifulong)
+  def escapeForShell(arg: String): String = {
+    if (arg != null) {
+      val escaped = new StringBuilder("'")
+      for (i <- 0 to arg.length() - 1) {
+        arg.charAt(i) match {
+          case '$' => escaped.append("\\$")
+          case '"' => escaped.append("\\\"")
+          case '\'' => escaped.append("'\\''")
+          case c => escaped.append(c)
+        }   
+      }   
+      escaped.append("'").toString()
+    } else {
+      arg
+    }
+  }
+
+  /** 
+   * Expand environment variable using Yarn API.
+   * If environment.$$() is implemented, return the result of it. 
+   * Otherwise, return the result of environment.$()
+   * Note: $$() is added in Hadoop 2.4.
+   */  
+  private lazy val expandMethod =
+    Try(classOf[Environment].getMethod("$$"))
+      .getOrElse(classOf[Environment].getMethod("$"))
+
+  def expandEnvironment(environment: Environment): String =
+    expandMethod.invoke(environment).asInstanceOf[String]
 }

@@ -43,6 +43,16 @@ class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration, spar
 
   def this(args: ApplicationMasterArguments) = this(args, new SparkConf())
 
+  // Load the properties file with the Spark configuration and set entries as system properties,
+  // so that user code run inside the AM also has access to them.
+  logInfo("LIFULONG add log, run into WorkerLauncher, args.propertiesFile: " + args.propertiesFile)
+  if (args.propertiesFile != null) {
+    Utils.getPropertiesFromFile(args.propertiesFile).foreach { case (k, v) =>
+      sys.props(k) = v
+      logInfo("LIFULONG add log, key is: " + k + " value is:" + v)
+    }
+  }
+
   private var appAttemptId: ApplicationAttemptId = _
   private var reporterThread: Thread = _
   private val yarnConf: YarnConfiguration = new YarnConfiguration(conf)

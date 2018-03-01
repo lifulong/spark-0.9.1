@@ -217,4 +217,153 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging {
   def toDebugString: String = {
     settings.toArray.sorted.map{case (k, v) => k + "=" + v}.mkString("\n")
   }
+
+  //FIXED: Add by lifulong( copy from spark-1.6.2 )
+  /** Checks for illegal or deprecated config settings. Throws an exception for the former. Not
+    * idempotent - may mutate this conf object to convert deprecated settings to supported ones. */
+  private[spark] def validateSettings() {
+    if (contains("spark.local.dir")) {
+      val msg = "In Spark 1.0 and later spark.local.dir will be overridden by the value set by " +
+        "the cluster manager (via SPARK_LOCAL_DIRS in mesos/standalone and LOCAL_DIRS in YARN)."
+      logWarning(msg)
+    }
+
+    val executorOptsKey = "spark.executor.extraJavaOptions"
+    //val executorClasspathKey = "spark.executor.extraClassPath"
+    val driverOptsKey = "spark.driver.extraJavaOptions"
+    //val driverClassPathKey = "spark.driver.extraClassPath"
+    //val driverLibraryPathKey = "spark.driver.extraLibraryPath"
+    //val sparkExecutorInstances = "spark.executor.instances"
+
+    // Used by Yarn in 1.1 and before
+    /*
+    sys.props.get("spark.driver.libraryPath").foreach { value =>
+      val warning =
+        s"""
+          |spark.driver.libraryPath was detected (set to '$value').
+          |This is deprecated in Spark 1.2+.
+          |
+          |Please instead use: $driverLibraryPathKey
+        """.stripMargin
+      logWarning(warning)
+    }
+    */
+
+    // Validate spark.executor.extraJavaOptions
+    getOption(executorOptsKey).map { javaOpts =>
+      if (javaOpts.contains("-Dspark")) {
+        val msg = s"$executorOptsKey is not allowed to set Spark options (was '$javaOpts'). " +
+          "Set them directly on a SparkConf or in a properties file when using ./bin/spark-submit."
+        throw new Exception(msg)
+      }
+      if (javaOpts.contains("-Xmx") || javaOpts.contains("-Xms")) {
+        val msg = s"$executorOptsKey is not allowed to alter memory settings (was '$javaOpts'). " +
+          "Use spark.executor.memory instead."
+        throw new Exception(msg)
+      }
+    }
+
+    // Validate memory fractions
+    /*
+    val deprecatedMemoryKeys = Seq(
+      "spark.storage.memoryFraction",
+      "spark.shuffle.memoryFraction",
+      "spark.shuffle.safetyFraction",
+      "spark.storage.unrollFraction",
+      "spark.storage.safetyFraction")
+    val memoryKeys = Seq(
+      "spark.memory.fraction",
+      "spark.memory.storageFraction") ++
+      deprecatedMemoryKeys
+    for (key <- memoryKeys) {
+      val value = getDouble(key, 0.5)
+      if (value > 1 || value < 0) {
+        throw new IllegalArgumentException(s"$key should be between 0 and 1 (was '$value').")
+      }
+    }
+
+    // Warn against deprecated memory fractions (unless legacy memory management mode is enabled)
+    val legacyMemoryManagementKey = "spark.memory.useLegacyMode"
+    val legacyMemoryManagement = getBoolean(legacyMemoryManagementKey, false)
+    if (!legacyMemoryManagement) {
+      val keyset = deprecatedMemoryKeys.toSet
+      val detected = settings.keys().asScala.filter(keyset.contains)
+      if (detected.nonEmpty) {
+        logWarning("Detected deprecated memory fraction settings: " +
+          detected.mkString("[", ", ", "]") + ". As of Spark 1.6, execution and storage " +
+          "memory management are unified. All memory fractions used in the old model are " +
+          "now deprecated and no longer read. If you wish to use the old memory management, " +
+          s"you may explicitly enable `$legacyMemoryManagementKey` (not recommended).")
+      }
+    }
+    */
+
+    // Check for legacy configs
+    sys.env.get("SPARK_JAVA_OPTS").foreach { value =>
+      val warning =
+        s"""
+          |SPARK_JAVA_OPTS was detected (set to '$value').
+          |This is deprecated in Spark 1.0+.
+          |
+          |Please instead use:
+          | - ./spark-submit with conf/spark-defaults.conf to set defaults for an application
+          | - ./spark-submit with --driver-java-options to set -X options for a driver
+          | - spark.executor.extraJavaOptions to set -X options for executors
+          | - SPARK_DAEMON_JAVA_OPTS to set java options for standalone daemons (master or worker)
+        """.stripMargin
+      logWarning(warning)
+
+      for (key <- Seq(executorOptsKey, driverOptsKey)) {
+        if (getOption(key).isDefined) {
+          throw new SparkException(s"Found both $key and SPARK_JAVA_OPTS. Use only the former.")
+        } else {
+          logWarning(s"Setting '$key' to '$value' as a work-around.")
+          set(key, value)
+        }
+      }
+    }
+
+    /*
+    sys.env.get("SPARK_CLASSPATH").foreach { value =>
+      val warning =
+        s"""
+          |SPARK_CLASSPATH was detected (set to '$value').
+          |This is deprecated in Spark 1.0+.
+          |
+          |Please instead use:
+          | - ./spark-submit with --driver-class-path to augment the driver classpath
+          | - spark.executor.extraClassPath to augment the executor classpath
+        """.stripMargin
+      logWarning(warning)
+
+      for (key <- Seq(executorClasspathKey, driverClassPathKey)) {
+        if (getOption(key).isDefined) {
+          throw new SparkException(s"Found both $key and SPARK_CLASSPATH. Use only the former.")
+        } else {
+          logWarning(s"Setting '$key' to '$value' as a work-around.")
+          set(key, value)
+        }
+      }
+    }
+
+    if (!contains(sparkExecutorInstances)) {
+      sys.env.get("SPARK_WORKER_INSTANCES").foreach { value =>
+        val warning =
+          s"""
+             |SPARK_WORKER_INSTANCES was detected (set to '$value').
+             |This is deprecated in Spark 1.0+.
+             |
+             |Please instead use:
+             | - ./spark-submit with --num-executors to specify the number of executors
+             | - Or set SPARK_EXECUTOR_INSTANCES
+             | - spark.executor.instances to configure the number of instances in the spark config.
+        """.stripMargin
+        logWarning(warning)
+
+        set("spark.executor.instances", value)
+      }
+    }
+    */
+  }
+
 }

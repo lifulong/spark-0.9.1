@@ -1,6 +1,11 @@
 Spark Change Log
 ----------------
 
+TODO:
+	support kvro
+	instance number
+
+2018-02-28 Support config executor JAVA_OPTS
 2018-02-27 Don't require SPARK_YARN_APP_JAR
 2018-02-27 support spark-submit command
 

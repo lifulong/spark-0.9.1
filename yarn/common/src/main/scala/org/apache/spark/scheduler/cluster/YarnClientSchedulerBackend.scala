@@ -44,7 +44,7 @@ private[spark] class YarnClientSchedulerBackend(
   override def start() {
     super.start()
 
-    // Fixed by moses
+    // FIXED: by lifulong
     /*
     val userJar = System.getenv("SPARK_YARN_APP_JAR")
     if (userJar == null)

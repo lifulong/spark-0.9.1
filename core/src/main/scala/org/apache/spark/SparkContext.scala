@@ -102,6 +102,8 @@ class SparkContext(
   }
 
   private[spark] val conf = config.clone()
+  //FIXED: lifulong
+  conf.validateSettings()
 
   /**
    * Return a copy of this SparkContext's configuration. The configuration ''cannot'' be

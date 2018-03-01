@@ -86,6 +86,12 @@ class WorkerRunnable(
       JAVA_OPTS += env("SPARK_JAVA_OPTS") + " "
     }
 
+    //FIXED: add by lifulong
+    // Set extra Java options for the executor, if defined
+    sys.props.get("spark.executor.extraJavaOptions").foreach { opts =>
+      JAVA_OPTS += opts
+    }
+
     JAVA_OPTS += " -Djava.io.tmpdir=" + 
       new Path(Environment.PWD.$(), YarnConfiguration.DEFAULT_CONTAINER_TEMP_DIR) + " "
 

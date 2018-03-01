@@ -51,6 +51,16 @@ class ApplicationMaster(args: ApplicationMasterArguments, conf: Configuration,
 
   def this(args: ApplicationMasterArguments) = this(args, new SparkConf())
 
+  // Load the properties file with the Spark configuration and set entries as system properties,
+  // so that user code run inside the AM also has access to them.
+  logInfo("LIFULONG add log, run into ApplicationMaster, args.propertiesFile: " + args.propertiesFile)
+  if (args.propertiesFile != null) {
+    Utils.getPropertiesFromFile(args.propertiesFile).foreach { case (k, v) =>
+      sys.props(k) = v
+      logInfo("LIFULONG add log, key is: " + k + " value is:" + v)
+    }
+  }
+
   private val yarnConf: YarnConfiguration = new YarnConfiguration(conf)
   private var appAttemptId: ApplicationAttemptId = _
   private var userThread: Thread = _
