@@ -38,6 +38,9 @@ import org.apache.hadoop.yarn.client.api.AMRMClient.ContainerRequest
 class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration, sparkConf: SparkConf)
   extends Logging {
 
+  private val numExecutors = YarnSparkHadoopUtil.getInitialTargetExecutorNumber(sparkConf)
+  logInfo("LIFULONG add log, numExecutors@WorkerLauncher: " + numExecutors)
+  logInfo("LIFULONG add log, numExecutors@WorkerLauncher: " + sparkConf.getInt("spark.executor.instances", -1))
   def this(args: ApplicationMasterArguments, sparkConf: SparkConf) =
     this(args, new Configuration(), sparkConf)
 
@@ -45,7 +48,7 @@ class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration, spar
 
   // Load the properties file with the Spark configuration and set entries as system properties,
   // so that user code run inside the AM also has access to them.
-  logInfo("LIFULONG add log, run into WorkerLauncher, args.propertiesFile: " + args.propertiesFile)
+  logInfo("LIFULONG add log, args.propertiesFile@WorkerLauncher: " + args.propertiesFile)
   if (args.propertiesFile != null) {
     Utils.getPropertiesFromFile(args.propertiesFile).foreach { case (k, v) =>
       sys.props(k) = v
@@ -197,13 +200,13 @@ class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration, spar
       preferredNodeLocationData,
       sparkConf)
 
-    logInfo("Allocating " + args.numWorkers + " workers.")
+    logInfo("Allocating " + numExecutors + " executors.")
     // Wait until all containers have finished
     // TODO: This is a bit ugly. Can we make it nicer?
     // TODO: Handle container failure
 
-    yarnAllocator.addResourceRequests(args.numWorkers)
-    while ((yarnAllocator.getNumWorkersRunning < args.numWorkers) && (!driverClosed)) {
+    yarnAllocator.addResourceRequests(numExecutors)
+    while ((yarnAllocator.getNumExecutorsRunning < numExecutors) && (!driverClosed)) {
       yarnAllocator.allocateResources()
       Thread.sleep(100)
     }
@@ -219,12 +222,12 @@ class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration, spar
     val t = new Thread {
       override def run() {
         while (!driverClosed) {
-          val missingWorkerCount = args.numWorkers - yarnAllocator.getNumWorkersRunning -
+          val missingExecutorCount = numExecutors - yarnAllocator.getNumExecutorsRunning -
             yarnAllocator.getNumPendingAllocate
-          if (missingWorkerCount > 0) {
+          if (missingExecutorCount > 0) {
             logInfo("Allocating %d containers to make up for (potentially) lost containers".
-              format(missingWorkerCount))
-            yarnAllocator.addResourceRequests(missingWorkerCount)
+              format(missingExecutorCount))
+            yarnAllocator.addResourceRequests(missingExecutorCount)
           }
           sendProgress()
           Thread.sleep(sleepTime)

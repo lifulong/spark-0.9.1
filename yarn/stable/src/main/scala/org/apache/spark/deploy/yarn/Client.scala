@@ -129,10 +129,10 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       // (System.getenv("SPARK_JAR") == null) -> "Error: You must set SPARK_JAR environment variable!",
       (args.userJar == null && args.amClass == classOf[ApplicationMaster].getName) -> "Error: You must specify a user jar!",
       (args.userClass == null) -> "Error: You must specify a user class!",
-      (args.numWorkers <= 0) -> "Error: You must specify at least 1 worker!",
+      (args.numExecutors <= 0) -> "Error: You must specify at least 1 executor!",
       (args.amMemory <= YarnAllocationHandler.MEMORY_OVERHEAD) -> ("Error: AM memory size must be" +
         "greater than: " + YarnAllocationHandler.MEMORY_OVERHEAD),
-      (args.workerMemory <= YarnAllocationHandler.MEMORY_OVERHEAD) -> ("Error: Worker memory size" +
+      (args.executorMemory <= YarnAllocationHandler.MEMORY_OVERHEAD) -> ("Error: Executor memory size" +
         "must be greater than: " + YarnAllocationHandler.MEMORY_OVERHEAD.toString)
     ).foreach { case(cond, errStr) =>
       if (cond) {
@@ -166,9 +166,9 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
     logInfo("Max mem capabililty of a single resource in this cluster " + maxMem)
 
     // If we have requested more then the clusters max for a single resource then exit.
-    if (args.workerMemory > maxMem) {
-      logError("Required worker memory (%d MB), is above the max threshold (%d MB) of this cluster.".
-        format(args.workerMemory, maxMem))
+    if (args.executorMemory > maxMem) {
+      logError("Required executor memory (%d MB), is above the max threshold (%d MB) of this cluster.".
+        format(args.executorMemory, maxMem))
       System.exit(1)
     }
     val amMem = args.amMemory + YarnAllocationHandler.MEMORY_OVERHEAD
@@ -553,9 +553,10 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       " --class " + args.userClass +
       " --jar " + args.userJar +
       userArgsToString(args) +
-      " --worker-memory " + args.workerMemory +
-      " --worker-cores " + args.workerCores +
-      " --num-workers " + args.numWorkers +
+      " --executor-memory " + args.executorMemory +
+      " --executor-cores " + args.executorCores +
+      // FIXED: comment by lifulong
+      // " --num-executors " + args.numExecutors +
       " --properties-file " + Client.buildPath(YarnSparkHadoopUtil.expandEnvironment(Environment.PWD), "spark-defaults.conf") +
       " 1> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout" +
       " 2> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr")
@@ -630,6 +631,11 @@ object Client {
     System.setProperty("SPARK_YARN_MODE", "true")
     val sparkConf = new SparkConf()
     val args = new ClientArguments(argStrings, sparkConf)
+
+    // to maintain backwards-compatibility
+    if (!Utils.isDynamicAllocationEnabled(sparkConf)) {
+      sparkConf.setIfMissing("spark.executor.instances", args.numExecutors.toString)
+    }
 
     new Client(args, sparkConf).run()
   }

@@ -27,6 +27,9 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.yarn.api.ApplicationConstants                                                                                      
 import org.apache.hadoop.yarn.api.ApplicationConstants.Environment
 
+import org.apache.spark.SparkConf
+import org.apache.spark.util.Utils
+
 /**
  * Contains util methods to interact with Hadoop from spark.
  */
@@ -52,6 +55,15 @@ class YarnSparkHadoopUtil extends SparkHadoopUtil {
 }
 
 object YarnSparkHadoopUtil {
+  // Additional memory overhead
+  // 10% was arrived at experimentally. In the interest of minimizing memory waste while covering
+  // the common cases. Memory overhead tends to grow with container size.
+
+  val MEMORY_OVERHEAD_FACTOR = 0.10
+  val MEMORY_OVERHEAD_MIN = 384
+
+  val DEFAULT_NUMBER_EXECUTORS = 2
+
   //FIXED: Support uinx/linux only (Add by lifulong)
   def escapeForShell(arg: String): String = {
     if (arg != null) {
@@ -82,4 +94,31 @@ object YarnSparkHadoopUtil {
 
   def expandEnvironment(environment: Environment): String =
     expandMethod.invoke(environment).asInstanceOf[String]
+
+  /** 
+   * Getting the initial target number of executors depends on whether dynamic allocation is
+   * enabled.
+   * If not using dynamic allocation it gets the number of executors reqeusted by the user.
+   */  
+  def getInitialTargetExecutorNumber(
+      conf: SparkConf,
+      numExecutors: Int = DEFAULT_NUMBER_EXECUTORS): Int = { 
+    if (Utils.isDynamicAllocationEnabled(conf)) {
+      val minNumExecutors = conf.getInt("spark.dynamicAllocation.minExecutors", 0)
+      val initialNumExecutors =
+        conf.getInt("spark.dynamicAllocation.initialExecutors", minNumExecutors)
+      val maxNumExecutors = conf.getInt("spark.dynamicAllocation.maxExecutors", Int.MaxValue)
+      require(initialNumExecutors >= minNumExecutors && initialNumExecutors <= maxNumExecutors,
+        s"initial executor number $initialNumExecutors must between min executor number" +
+          s"$minNumExecutors and max executor number $maxNumExecutors")
+
+      initialNumExecutors
+    } else {
+      val targetNumExecutors =
+        sys.env.get("SPARK_EXECUTOR_INSTANCES").map(_.toInt).getOrElse(numExecutors)
+      // System property can override environment variable.
+      conf.getInt("spark.executor.instances", targetNumExecutors)
+    }
+  }
+
 }

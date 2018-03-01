@@ -42,6 +42,7 @@ private[spark] class YarnClientSchedulerBackend(
   }
 
   override def start() {
+    logInfo("LIFULONG add log, @YarnClientSchedulerBackend")
     super.start()
 
     // FIXED: by lifulong
@@ -66,9 +67,9 @@ private[spark] class YarnClientSchedulerBackend(
     // process any optional arguments, use the defaults already defined in ClientArguments 
     // if things aren't specified
     Map("--master-memory" -> "SPARK_MASTER_MEMORY",
-      "--num-workers" -> "SPARK_WORKER_INSTANCES",
-      "--worker-memory" -> "SPARK_WORKER_MEMORY",
-      "--worker-cores" -> "SPARK_WORKER_CORES",
+      "--num-executors" -> "SPARK_WORKER_INSTANCES",
+      "--executor-memory" -> "SPARK_WORKER_MEMORY",
+      "--executor-cores" -> "SPARK_WORKER_CORES",
       "--queue" -> "SPARK_YARN_QUEUE",
       "--name" -> "SPARK_YARN_APP_NAME",
       "--files" -> "SPARK_YARN_DIST_FILES",
@@ -84,7 +85,7 @@ private[spark] class YarnClientSchedulerBackend(
 
   def waitForApp() {
 
-    // TODO : need a better way to find out whether the workers are ready or not
+    // TODO : need a better way to find out whether the executors are ready or not
     // maybe by resource usage report?
     while(true) {
       val report = client.getApplicationReport(appId)

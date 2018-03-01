@@ -49,8 +49,8 @@ class WorkerRunnable(
     masterAddress: String,
     slaveId: String,
     hostname: String,
-    workerMemory: Int,
-    workerCores: Int) 
+    executorMemory: Int,
+    executorCores: Int) 
   extends Runnable with Logging {
 
   var rpc: YarnRPC = YarnRPC.create(conf)
@@ -80,8 +80,8 @@ class WorkerRunnable(
     // Extra options for the JVM
     var JAVA_OPTS = ""
     // Set the JVM memory
-    val workerMemoryString = workerMemory + "m"
-    JAVA_OPTS += "-Xms" + workerMemoryString + " -Xmx" + workerMemoryString + " "
+    val executorMemoryString = executorMemory + "m"
+    JAVA_OPTS += "-Xms" + executorMemoryString + " -Xmx" + executorMemoryString + " "
     if (env.isDefinedAt("SPARK_JAVA_OPTS")) {
       JAVA_OPTS += env("SPARK_JAVA_OPTS") + " "
     }
@@ -134,7 +134,7 @@ class WorkerRunnable(
     val commands = List[String](javaCommand +
       " -server " +
       // Kill if OOM is raised - leverage yarn's failure handling to cause rescheduling.
-      // Not killing the task leaves various aspects of the worker and (to some extent) the jvm in
+      // Not killing the task leaves various aspects of the executor and (to some extent) the jvm in
       // an inconsistent state.
       // TODO: If the OOM is not recoverable by rescheduling it on different node, then do
       // 'something' to fail job ... akin to blacklisting trackers in mapred ?
@@ -144,10 +144,10 @@ class WorkerRunnable(
       masterAddress + " " +
       slaveId + " " +
       hostname + " " +
-      workerCores +
+      executorCores +
       " 1> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout" +
       " 2> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr")
-    logInfo("Setting up worker with commands: " + commands)
+    logInfo("Setting up executor with commands: " + commands)
     ctx.setCommands(commands)
 
     // Send the start request to the ContainerManager

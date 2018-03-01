@@ -60,9 +60,9 @@ private[yarn] class YarnAllocationHandler(
     val conf: Configuration,
     val amClient: AMRMClient[ContainerRequest],
     val appAttemptId: ApplicationAttemptId,
-    val maxWorkers: Int,
-    val workerMemory: Int,
-    val workerCores: Int,
+    val maxExecutors: Int,
+    val executorMemory: Int,
+    val executorCores: Int,
     val preferredHostToCount: Map[String, Int], 
     val preferredRackToCount: Map[String, Int],
     val sparkConf: SparkConf)
@@ -89,20 +89,20 @@ private[yarn] class YarnAllocationHandler(
   // Number of container requests that have been sent to, but not yet allocated by the
   // ApplicationMaster.
   private val numPendingAllocate = new AtomicInteger()
-  private val numWorkersRunning = new AtomicInteger()
-  // Used to generate a unique id per worker
+  private val numExecutorsRunning = new AtomicInteger()
+  // Used to generate a unique id per executor
   private val workerIdCounter = new AtomicInteger()
   private val lastResponseId = new AtomicInteger()
-  private val numWorkersFailed = new AtomicInteger()
+  private val numExecutorsFailed = new AtomicInteger()
 
   def getNumPendingAllocate: Int = numPendingAllocate.intValue
 
-  def getNumWorkersRunning: Int = numWorkersRunning.intValue
+  def getNumExecutorsRunning: Int = numExecutorsRunning.intValue
 
-  def getNumWorkersFailed: Int = numWorkersFailed.intValue
+  def getNumExecutorsFailed: Int = numExecutorsFailed.intValue
 
   def isResourceConstraintSatisfied(container: Container): Boolean = {
-    container.getResource.getMemory >= (workerMemory + YarnAllocationHandler.MEMORY_OVERHEAD)
+    container.getResource.getMemory >= (executorMemory + YarnAllocationHandler.MEMORY_OVERHEAD)
   }
 
   def releaseContainer(container: Container) {
@@ -127,13 +127,13 @@ private[yarn] class YarnAllocationHandler(
 
       logDebug("""
         Allocated containers: %d
-        Current worker count: %d
+        Current executor count: %d
         Containers released: %s
         Containers to-be-released: %s
         Cluster resources: %s
         """.format(
           allocatedContainers.size,
-          numWorkersRunning.get(),
+          numExecutorsRunning.get(),
           releasedContainerList,
           pendingReleaseContainers,
           allocateResponse.getAvailableResources))
@@ -240,18 +240,18 @@ private[yarn] class YarnAllocationHandler(
 
       // Run each of the allocated containers.
       for (container <- allocatedContainersToProcess) {
-        val numWorkersRunningNow = numWorkersRunning.incrementAndGet()
+        val numExecutorsRunningNow = numExecutorsRunning.incrementAndGet()
         val workerHostname = container.getNodeId.getHost
         val containerId = container.getId
 
-        val workerMemoryOverhead = (workerMemory + YarnAllocationHandler.MEMORY_OVERHEAD)
-        assert(container.getResource.getMemory >= workerMemoryOverhead)
+        val executorMemoryOverhead = (executorMemory + YarnAllocationHandler.MEMORY_OVERHEAD)
+        assert(container.getResource.getMemory >= executorMemoryOverhead)
 
-        if (numWorkersRunningNow > maxWorkers) {
+        if (numExecutorsRunningNow > maxExecutors) {
           logInfo("""Ignoring container %s at host %s, since we already have the required number of
             containers for it.""".format(containerId, workerHostname))
           releaseContainer(container)
-          numWorkersRunning.decrementAndGet()
+          numExecutorsRunning.decrementAndGet()
         } else {
           val workerId = workerIdCounter.incrementAndGet().toString
           val driverUrl = "akka.tcp://spark@%s:%s/user/%s".format(
@@ -284,8 +284,8 @@ private[yarn] class YarnAllocationHandler(
             driverUrl,
             workerId,
             workerHostname,
-            workerMemory,
-            workerCores)
+            executorMemory,
+            executorCores)
           new Thread(workerRunnable).start()
         }
       }
@@ -297,7 +297,7 @@ private[yarn] class YarnAllocationHandler(
         """.format(
           allocatedContainersToProcess,
           allocatedContainers,
-          numWorkersRunning.get(),
+          numExecutorsRunning.get(),
           releasedContainerList,
           pendingReleaseContainers))
     }
@@ -316,7 +316,7 @@ private[yarn] class YarnAllocationHandler(
         } else {
           // Decrement the number of workers running. The next iteration of the ApplicationMaster's
           // reporting thread will take care of allocating.
-          numWorkersRunning.decrementAndGet()
+          numExecutorsRunning.decrementAndGet()
           logInfo("Completed container %s (state: %s, exit status: %s)".format(
             containerId,
             completedContainer.getState,
@@ -326,7 +326,7 @@ private[yarn] class YarnAllocationHandler(
           // now I think its ok as none of the containers are expected to exit
           if (completedContainer.getExitStatus() != 0) {
             logInfo("Container marked as failed: " + containerId)
-            numWorkersFailed.incrementAndGet()
+            numExecutorsFailed.incrementAndGet()
           }
         }
 
@@ -369,7 +369,7 @@ private[yarn] class YarnAllocationHandler(
         pendingReleaseContainers: %s
         """.format(
           completedContainers.size,
-          numWorkersRunning.get(),
+          numExecutorsRunning.get(),
           releasedContainerList,
           pendingReleaseContainers))
     }
@@ -472,7 +472,7 @@ private[yarn] class YarnAllocationHandler(
       numPendingAllocate.addAndGet(numWorkers)
       logInfo("Will Allocate %d worker containers, each with %d memory".format(
         numWorkers,
-        (workerMemory + YarnAllocationHandler.MEMORY_OVERHEAD)))
+        (executorMemory + YarnAllocationHandler.MEMORY_OVERHEAD)))
     } else {
       logDebug("Empty allocation request ...")
     }
@@ -532,8 +532,8 @@ private[yarn] class YarnAllocationHandler(
       priority: Int
     ): ArrayBuffer[ContainerRequest] = {
 
-    val memoryRequest = workerMemory + YarnAllocationHandler.MEMORY_OVERHEAD
-    val resource = Resource.newInstance(memoryRequest, workerCores)
+    val memoryRequest = executorMemory + YarnAllocationHandler.MEMORY_OVERHEAD
+    val resource = Resource.newInstance(memoryRequest, executorCores)
 
     val prioritySetting = Records.newRecord(classOf[Priority])
     prioritySetting.setPriority(priority)
@@ -570,13 +570,14 @@ object YarnAllocationHandler {
       args: ApplicationMasterArguments,
       sparkConf: SparkConf
     ): YarnAllocationHandler = {
+    val maxExecutors = YarnSparkHadoopUtil.getInitialTargetExecutorNumber(sparkConf)
     new YarnAllocationHandler(
       conf,
       amClient,
       appAttemptId,
-      args.numWorkers, 
-      args.workerMemory,
-      args.workerCores,
+      maxExecutors, 
+      args.executorMemory,
+      args.executorCores,
       Map[String, Int](),
       Map[String, Int](),
       sparkConf)
@@ -591,14 +592,15 @@ object YarnAllocationHandler {
       collection.Set[SplitInfo]],
       sparkConf: SparkConf
     ): YarnAllocationHandler = {
+    val maxExecutors = YarnSparkHadoopUtil.getInitialTargetExecutorNumber(sparkConf)
     val (hostToSplitCount, rackToSplitCount) = generateNodeToWeight(conf, map)
     new YarnAllocationHandler(
       conf,
       amClient,
       appAttemptId,
-      args.numWorkers, 
-      args.workerMemory,
-      args.workerCores,
+      maxExecutors, 
+      args.executorMemory,
+      args.executorCores,
       hostToSplitCount,
       rackToSplitCount,
       sparkConf)
@@ -608,9 +610,9 @@ object YarnAllocationHandler {
       conf: Configuration,
       amClient: AMRMClient[ContainerRequest],
       appAttemptId: ApplicationAttemptId,
-      maxWorkers: Int,
-      workerMemory: Int,
-      workerCores: Int,
+      maxExecutors: Int,
+      executorMemory: Int,
+      executorCores: Int,
       map: collection.Map[String, collection.Set[SplitInfo]],
       sparkConf: SparkConf
     ): YarnAllocationHandler = {
@@ -619,9 +621,9 @@ object YarnAllocationHandler {
       conf,
       amClient,
       appAttemptId,
-      maxWorkers,
-      workerMemory,
-      workerCores,
+      maxExecutors,
+      executorMemory,
+      executorCores,
       hostToCount,
       rackToCount,
       sparkConf)
