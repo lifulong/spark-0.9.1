@@ -102,10 +102,10 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       (System.getenv("SPARK_JAR") == null) -> "Error: You must set SPARK_JAR environment variable!",
       (args.userJar == null) -> "Error: You must specify a user jar!",
       (args.userClass == null) -> "Error: You must specify a user class!",
-      (args.numWorkers <= 0) -> "Error: You must specify at least 1 worker!",
+      (args.numExecutors <= 0) -> "Error: You must specify at least 1 executor!",
       (args.amMemory <= YarnAllocationHandler.MEMORY_OVERHEAD) -> ("Error: AM memory size must be " +
         "greater than: " + YarnAllocationHandler.MEMORY_OVERHEAD),
-      (args.workerMemory <= YarnAllocationHandler.MEMORY_OVERHEAD) -> ("Error: Worker memory size " +
+      (args.executorMemory <= YarnAllocationHandler.MEMORY_OVERHEAD) -> ("Error: Executor memory size " +
         "must be greater than: " + YarnAllocationHandler.MEMORY_OVERHEAD)
     ).foreach { case(cond, errStr) =>
       if (cond) {
@@ -139,8 +139,8 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
     logInfo("Max mem capabililty of a single resource in this cluster " + maxMem)
 
     // If we have requested more then the clusters max for a single resource then exit.
-    if (args.workerMemory > maxMem) {
-      logError("the worker size is to large to run on this cluster " + args.workerMemory)
+    if (args.executorMemory > maxMem) {
+      logError("the executor size is to large to run on this cluster " + args.executorMemory)
       System.exit(1)
     }
     val amMem = args.amMemory + YarnAllocationHandler.MEMORY_OVERHEAD
@@ -400,9 +400,9 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       " --class " + args.userClass +
       " --jar " + args.userJar +
       userArgsToString(args) +
-      " --worker-memory " + args.workerMemory +
-      " --worker-cores " + args.workerCores +
-      " --num-workers " + args.numWorkers +
+      " --executor-memory " + args.executorMemory +
+      " --executor-cores " + args.executorCores +
+      " --num-executors " + args.numExecutors +
       " 1> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout" +
       " 2> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr")
     logInfo("Command for the ApplicationMaster: " + commands(0))

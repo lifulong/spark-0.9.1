@@ -198,7 +198,9 @@ class SparkContext(
   executorEnvs("SPARK_USER") = sparkUser
 
   // Create and start the scheduler
-  logInfo("LIFULONG add log, @SparkContext")
+  logInfo("LIFULONG add log, Sys.getProp('spark.executor.instances')@SparkContext:" + System.getProperty("spark.executor.instances"))
+  logInfo("LIFULONG add log, sparkConf['spark.executor.instances']@SparkContext:" + conf.getInt("spark.executor.instances", -1))
+  logInfo("LIFULONG add log, executorEnvs@SparkContext:" + executorEnvs)
   private[spark] var taskScheduler = SparkContext.createTaskScheduler(this, master, appName)
   taskScheduler.start()
 
@@ -1174,6 +1176,7 @@ object SparkContext {
       res.setJars(jars)
     }
     res.setExecutorEnv(environment.toSeq)
+    System.out.println("LIFULONG add log, sparkConf@SparkContext:" + res)
     res
   }
 

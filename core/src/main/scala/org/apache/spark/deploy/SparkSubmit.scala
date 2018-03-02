@@ -328,8 +328,8 @@ object SparkSubmit {
       System.setProperty(key, value)
     }
 
-    printStream.println("LIFULONG add log, childMainClass:" + childMainClass)
-    printStream.println("LIFULONG add log, childArgs:" + childArgs)
+    printStream.println("LIFULONG add log, childMainClass@SparkSubmit:" + childMainClass)
+    printStream.println("LIFULONG add log, childArgs@SparkSubmit:" + childArgs)
     val mainClass = Class.forName(childMainClass, true, loader)
     val mainMethod = mainClass.getMethod("main", new Array[String](0).getClass)
     try {

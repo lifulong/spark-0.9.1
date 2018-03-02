@@ -75,6 +75,9 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
   // App files are world-wide readable and owner writable -> rw-r--r--
   val APP_FILE_PERMISSION: FsPermission = FsPermission.createImmutable(Integer.parseInt("644", 8).toShort)
 
+  logInfo("LIFULONG add log, sparkConf['spark.executor.instances']@Client:" + sparkConf.getInt("spark.executor.instances", -1))
+  logInfo("LIFULONG add log, sys.env.get['spark.executor.instances']@Client:" + sys.env.get("spark.executor.instances"))
+
   def runApp(): ApplicationId = {
     validateArgs()
     // Initialize and start the client service.
@@ -562,7 +565,7 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       " 2> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr")
 
     logInfo("Command for starting the Spark ApplicationMaster: " + commands(0))
-    logInfo("LIFULONG add log:Command for starting the Spark ApplicationMaster: " + commands(0))
+    logInfo("LIFULONG add log:Command for starting the Spark ApplicationMaster@Client: " + commands(0))
     amContainer.setCommands(commands)
 
     // Setup security tokens.
@@ -634,6 +637,7 @@ object Client {
 
     // to maintain backwards-compatibility
     if (!Utils.isDynamicAllocationEnabled(sparkConf)) {
+      System.out.println("LIFULONG add log, spark.executor.instances@SparkConf@yarn.Client:" + args.numExecutors.toString)
       sparkConf.setIfMissing("spark.executor.instances", args.numExecutors.toString)
     }
 

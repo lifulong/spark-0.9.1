@@ -84,6 +84,7 @@ class SparkConf(object):
         @param _jvm: internal parameter used to pass a handle to the
                Java VM; does not need to be set by users
         """
+	print("LIFULONG add log, loadDefaults@PySparkConf:", loadDefaults)
         from pyspark.context import SparkContext
         SparkContext._ensure_initialized()
         _jvm = _jvm or SparkContext._jvm

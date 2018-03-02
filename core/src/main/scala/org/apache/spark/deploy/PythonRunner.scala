@@ -19,8 +19,12 @@ package org.apache.spark.deploy
 
 import java.net.URI
 
+import java.lang.management.ManagementFactory
+import java.lang.management.RuntimeMXBean
+
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 
 import org.apache.spark.api.python.{PythonUtils, RedirectThread}
 import org.apache.spark.util.Utils
@@ -42,6 +46,14 @@ object PythonRunner {
 
     // Launch a Py4J gateway server for the process to connect to; this will let it see our
     // Java system properties and such
+
+    val name = ManagementFactory.getRuntimeMXBean().getName()
+    val pid = name.split("@")(0)
+    System.out.println("LIFULONG add log, Prop@PythonRunner, Pid:" + pid)
+    for ((k, v) <- System.getProperties.asScala) {
+      System.out.println("LIFULONG add log, Prop@PythonRunner, key:" + k + " v:" + v)
+    }
+
     val gatewayServer = new py4j.GatewayServer(null, 0)
     gatewayServer.start()
 
@@ -54,6 +66,10 @@ object PythonRunner {
     val pythonPath = PythonUtils.mergePythonPaths(pathElements: _*)
 
     // Launch Python process
+    System.out.println("LIFULONG add log, @PythonRunner pythonExec:" + pythonExec + " formattedPythonFile:" + formattedPythonFile + " otherArgs:" + otherArgs)
+    System.out.println("LIFULONG add log, Sys.getProp('spark.executor.instances')@PythonRunner:" + System.getProperty("spark.executor.instances"))
+    System.out.println("LIFULONG add log, sys.env.get('spark.executor.instances')@PythonRunner:" + sys.env.get("spark.executor.instances"))
+    System.out.println("LIFULONG add log, System.getenv('spark.executor.instances')@PythonRunner:" + System.getenv("spark.executor.instances"))
     val builder = new ProcessBuilder(Seq(pythonExec, "-u", formattedPythonFile) ++ otherArgs)
     val env = builder.environment()
     env.put("PYTHONPATH", pythonPath)
