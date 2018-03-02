@@ -75,8 +75,10 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
   // App files are world-wide readable and owner writable -> rw-r--r--
   val APP_FILE_PERMISSION: FsPermission = FsPermission.createImmutable(Integer.parseInt("644", 8).toShort)
 
+  // TODO: hack spark.executor.instances here. should reimplement. by lifulong.
+  private val numExecutors = sparkConf.getInt("spark.executor.instances", args.numExecutors)
   logInfo("LIFULONG add log, sparkConf['spark.executor.instances']@Client:" + sparkConf.getInt("spark.executor.instances", -1))
-  logInfo("LIFULONG add log, sys.env.get['spark.executor.instances']@Client:" + sys.env.get("spark.executor.instances"))
+  logInfo("LIFULONG add log, numExecutors@Client:" + numExecutors)
 
   def runApp(): ApplicationId = {
     validateArgs()
@@ -481,6 +483,9 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       env("SPARK_JAVA_OPTS") = value
     }
 
+    // FIXED: add by lifulong
+    env("spark.executor.instances") = numExecutors.toString
+
     env
   }
 
@@ -637,7 +642,7 @@ object Client {
 
     // to maintain backwards-compatibility
     if (!Utils.isDynamicAllocationEnabled(sparkConf)) {
-      System.out.println("LIFULONG add log, spark.executor.instances@SparkConf@yarn.Client:" + args.numExecutors.toString)
+      System.out.println("LIFULONG add log, args.numExecutors@SparkConf@yarn.Client:" + args.numExecutors.toString)
       sparkConf.setIfMissing("spark.executor.instances", args.numExecutors.toString)
     }
 

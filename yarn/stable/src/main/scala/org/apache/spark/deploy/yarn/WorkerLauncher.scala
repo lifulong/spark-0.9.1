@@ -38,9 +38,12 @@ import org.apache.hadoop.yarn.client.api.AMRMClient.ContainerRequest
 class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration, sparkConf: SparkConf)
   extends Logging {
 
-  private val numExecutors = YarnSparkHadoopUtil.getInitialTargetExecutorNumber(sparkConf)
+  // TODO: temp implement, by lifulong
+  //private val numExecutors = YarnSparkHadoopUtil.getInitialTargetExecutorNumber(sparkConf)
   logInfo("LIFULONG add log, numExecutors@WorkerLauncher: " + numExecutors)
   logInfo("LIFULONG add log, numExecutors@WorkerLauncher: " + sparkConf.getInt("spark.executor.instances", -1))
+  logInfo("LIFULONG add log, numExecutors@WorkerLauncher: " + sys.env.get("spark.executor.instances"))
+  private val numExecutors = sys.env.get("spark.executor.instances").get.toInt
   def this(args: ApplicationMasterArguments, sparkConf: SparkConf) =
     this(args, new Configuration(), sparkConf)
 

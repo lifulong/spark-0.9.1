@@ -47,16 +47,11 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging {
 
   private val settings = new HashMap[String, String]()
 
-  val e = new Exception("LIFULONG add log, StackTrace@SparkConf.")
-  e.printStackTrace()
-  logInfo("LIFULONG add log, Loading defult properties from system loadDefaults@SparkConf:" + loadDefaults)
   if (loadDefaults) {
     // Load any spark.* system properties
-    for ((k, v) <- System.getProperties.asScala) {
-      logInfo("LIFULONG add log, Prop@SparkConf, key:" + k + " v:" + v)
-    }
     for ((k, v) <- System.getProperties.asScala if k.startsWith("spark.")) {
       settings(k) = v
+      logInfo("LIFULONG add log, Prop@SparkConf, key:" + k + " v:" + v)
     }
   }
 
