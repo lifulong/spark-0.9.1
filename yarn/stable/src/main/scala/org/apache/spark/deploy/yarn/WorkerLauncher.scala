@@ -35,19 +35,8 @@ import org.apache.spark.scheduler.SplitInfo
 import org.apache.hadoop.yarn.client.api.AMRMClient
 import org.apache.hadoop.yarn.client.api.AMRMClient.ContainerRequest
 
-class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration, sparkConf: SparkConf)
+class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration)
   extends Logging {
-
-  // TODO: temp implement, by lifulong
-  //private val numExecutors = YarnSparkHadoopUtil.getInitialTargetExecutorNumber(sparkConf)
-  logInfo("LIFULONG add log, numExecutors@WorkerLauncher: " + numExecutors)
-  logInfo("LIFULONG add log, numExecutors@WorkerLauncher: " + sparkConf.getInt("spark.executor.instances", -1))
-  logInfo("LIFULONG add log, numExecutors@WorkerLauncher: " + sys.env.get("spark.executor.instances"))
-  private val numExecutors = sys.env.get("spark.executor.instances").get.toInt
-  def this(args: ApplicationMasterArguments, sparkConf: SparkConf) =
-    this(args, new Configuration(), sparkConf)
-
-  def this(args: ApplicationMasterArguments) = this(args, new SparkConf())
 
   // Load the properties file with the Spark configuration and set entries as system properties,
   // so that user code run inside the AM also has access to them.
@@ -58,6 +47,13 @@ class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration, spar
       logInfo("LIFULONG add log, key is: " + k + " value is:" + v)
     }
   }
+  val sparkConf = new SparkConf()
+
+  // TODO: temp implement, by lifulong
+  private val numExecutors = YarnSparkHadoopUtil.getInitialTargetExecutorNumber(sparkConf)
+  logInfo("LIFULONG add log, numExecutors@WorkerLauncher: " + numExecutors)
+
+  def this(args: ApplicationMasterArguments) = this(args, new Configuration())
 
   private var appAttemptId: ApplicationAttemptId = _
   private var reporterThread: Thread = _

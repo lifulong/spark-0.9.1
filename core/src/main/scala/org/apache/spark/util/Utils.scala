@@ -840,9 +840,6 @@ private[spark] object Utils extends Logging {
 
 
 
-
-
-
   /**
    * Get the ClassLoader which loaded Spark.
    */

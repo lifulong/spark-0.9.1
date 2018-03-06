@@ -374,7 +374,7 @@ private[spark] class SparkSubmitArguments(args: Seq[String]) {
         |  --archives ARCHIVES         Comma separated list of archives to be extracted into the
         |                              working directory of each executor.""".stripMargin
     )
-    SparkSubmit.exitFn()
+    SparkSubmit.exitFn(exitCode)
   }
 }
 

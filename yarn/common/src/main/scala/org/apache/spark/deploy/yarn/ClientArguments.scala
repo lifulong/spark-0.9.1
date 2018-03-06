@@ -32,6 +32,8 @@ class ClientArguments(val args: Array[String], val sparkConf: SparkConf) {
   var archives: String = null
   var userJar: String = null
   var userClass: String = null
+  var pyFiles: Seq[String] = Nil 
+  var primaryPyFile: String = null
   var userArgs: Seq[String] = Seq[String]()
   var executorMemory = 1024 // MB
   var executorCores = 1
@@ -63,6 +65,10 @@ class ClientArguments(val args: Array[String], val sparkConf: SparkConf) {
 
         case ("--class") :: value :: tail =>
           userClass = value
+          args = tail
+
+        case ("--primary-py-file") :: value :: tail =>
+          primaryPyFile = value
           args = tail
 
         case ("--args") :: value :: tail =>
@@ -99,6 +105,10 @@ class ClientArguments(val args: Array[String], val sparkConf: SparkConf) {
 
         case ("--addJars") :: value :: tail =>
           addJars = value
+          args = tail
+
+        case ("--py-files") :: value :: tail =>
+          pyFiles = value.split(",")
           args = tail
 
         case ("--files") :: value :: tail =>

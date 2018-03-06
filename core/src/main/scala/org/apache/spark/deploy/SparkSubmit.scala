@@ -25,6 +25,17 @@ import scala.collection.mutable.{ArrayBuffer, HashMap, Map}
 
 import org.apache.spark.executor.ExecutorURLClassLoader
 import org.apache.spark.util.Utils
+//import org.apache.spark.{SparkException, SparkUserAppException, SPARK_VERSION}
+import org.apache.spark.SPARK_VERSION
+
+/**
+ * Whether to submit, kill, or request the status of an application.
+ * The latter two operations are currently supported only for standalone cluster mode.
+ */
+private[deploy] object SparkSubmitAction extends Enumeration {
+  type SparkSubmitAction = Value
+  val SUBMIT, KILL, REQUEST_STATUS = Value
+}
 
 /**
  * Scala code behind the spark-submit script.  The script handles setting up the classpath with
@@ -65,14 +76,25 @@ object SparkSubmit {
 
   // Exposed for testing
   private[spark] var printStream: PrintStream = System.err
-  private[spark] var exitFn: () => Unit = () => System.exit(-1)
+  private[spark] var exitFn: Int => Unit = (exitCode: Int) => System.exit(exitCode)
 
   private[spark] def printErrorAndExit(str: String) = {
     printStream.println("Error: " + str)
     printStream.println("Run with --help for usage help or --verbose for debug output")
-    exitFn()
+    exitFn(-1)
   }
   private[spark] def printWarning(str: String) = printStream.println("Warning: " + str)
+  private[spark] def printVersionAndExit(): Unit = {
+    printStream.println("""Welcome to
+      ____              __   
+     / __/__  ___ _____/ /__
+    _\ \/ _ \/ _ `/ __/  '_/  
+   /___/ .__/\_,_/_/ /_/\_\   version %s
+      /_/  
+                        """.format(SPARK_VERSION))
+    printStream.println("Type --help for more information.")
+    exitFn(0)
+  }
 
   /**
    * @return a tuple containing the arguments for the child, a list of classpath

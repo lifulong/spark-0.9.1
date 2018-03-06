@@ -24,7 +24,7 @@ import java.util.zip.{ZipEntry, ZipOutputStream}
 import java.util.Properties
 
 import scala.collection.JavaConversions._
-import scala.collection.mutable.HashMap
+import scala.collection.mutable.{HashMap, HashSet}
 import scala.collection.mutable.Map
 
 import com.google.common.base.Charsets.UTF_8
@@ -81,7 +81,8 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
   logInfo("LIFULONG add log, numExecutors@Client:" + numExecutors)
 
   def runApp(): ApplicationId = {
-    validateArgs()
+    // FIXED: comment by lifulong
+    // validateArgs()
     // Initialize and start the client service.
     init(yarnConf)
     start()
@@ -223,6 +224,7 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
     true
   }
 
+  // FIXED: old version(0.9.1)
   /** Copy the file into HDFS if needed. */
   private def copyRemoteFile(
       dstDir: Path,
@@ -247,11 +249,41 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
     destPath
   }
 
+  // FIXED: new version(1.6.2)
+  /**
+   * Copy the given file to a remote file system (e.g. HDFS) if needed.
+   * The file is only copied if the source and destination file systems are different. This is used
+   * for preparing resources for launching the ApplicationMaster container. Exposed for testing.
+   */
+  private[yarn] def copyFileToRemote(
+      destDir: Path,
+      srcPath: Path,
+      replication: Short): Path = {
+    val destFs = destDir.getFileSystem(conf)
+    val srcFs = srcPath.getFileSystem(conf)
+    var destPath = srcPath
+    if (!compareFs(srcFs, destFs)) {
+      destPath = new Path(destDir, srcPath.getName())
+      logInfo(s"Uploading resource $srcPath -> $destPath")
+      FileUtil.copy(srcFs, srcPath, destFs, destPath, false, conf)
+      destFs.setReplication(destPath, replication)
+      destFs.setPermission(destPath, new FsPermission(APP_FILE_PERMISSION))
+    } else {
+      logInfo(s"Source and destination file systems are the same. Not copying $srcPath")
+    }
+    // Resolve any symlinks in the URI path so using a "current" symlink to point to a specific
+    // version shows the specific version in the distributed cache configuration
+    val qualifiedDestPath = destFs.makeQualified(destPath)
+    val fc = FileContext.getFileContext(qualifiedDestPath.toUri(), conf)
+    fc.resolvePath(qualifiedDestPath)
+  }
+
   def prepareLocalResources(appStagingDir: String): HashMap[String, LocalResource] = {
     logInfo("Preparing Local resources")
     // Upload Spark and the application JAR to the remote file system if necessary. Add them as
     // local resources to the application master.
     val fs = FileSystem.get(conf)
+    val distributedUris = new HashSet[String]
 
     val delegTokenRenewer = Master.getMasterPrincipal(conf)
     if (UserGroupInformation.isSecurityEnabled()) {
@@ -272,6 +304,60 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
     FileSystem.mkdirs(fs, dst, new FsPermission(STAGING_DIR_PERMISSION))
 
     val statCache: Map[URI, FileStatus] = HashMap[URI, FileStatus]()
+
+    // FIXED: copy from spark-1.6.2 by lifulong
+    def addDistributedUri(uri: URI): Boolean = {
+      val uriStr = uri.toString()
+      if (distributedUris.contains(uriStr)) {
+        logWarning(s"Resource $uri added multiple times to distributed cache.")
+        false
+      } else {
+        distributedUris += uriStr
+        true
+      }
+    }
+
+    /**
+     * Distribute a file to the cluster.
+     *
+     * If the file's path is a "local:" URI, it's actually not distributed. Other files are copied
+     * to HDFS (if not already there) and added to the application's distributed cache.
+     *
+     * @param path URI of the file to distribute.
+     * @param resType Type of resource being distributed.
+     * @param destName Name of the file in the distributed cache.
+     * @param targetDir Subdirectory where to place the file.
+     * @param appMasterOnly Whether to distribute only to the AM.
+     * @return A 2-tuple. First item is whether the file is a "local:" URI. Second item is the
+     *         localized path for non-local paths, or the input `path` for local paths.
+     *         The localized path will be null if the URI has already been added to the cache.
+     */
+    def distribute(
+        path: String,
+        resType: LocalResourceType = LocalResourceType.FILE,
+        destName: Option[String] = None,
+        targetDir: Option[String] = None,
+        appMasterOnly: Boolean = false): (Boolean, String) = {
+      val trimmedPath = path.trim()
+      val localURI = Utils.resolveURI(trimmedPath)
+      if (localURI.getScheme != Client.LOCAL_SCHEME) {
+        if (addDistributedUri(localURI)) {
+          val localPath = Client.getQualifiedLocalPath(localURI, conf)
+          val linkname = targetDir.map(_ + "/").getOrElse("") +
+            destName.orElse(Option(localURI.getFragment())).getOrElse(localPath.getName())
+          val destPath = copyFileToRemote(dst, localPath, replication)
+          val destFs = FileSystem.get(destPath.toUri(), conf)
+          distCacheMgr.addResource(
+            destFs, conf, destPath, localResources, resType, linkname, statCache,
+            appMasterOnly = appMasterOnly)
+          (false, linkname)
+        } else {
+          (false, null)
+        }
+      } else {
+        (true, trimmedPath)
+      }
+    }
 
     Map(
       Client.SPARK_JAR -> sys.env.get("SPARK_JAR").getOrElse(SparkContext.jarOfClass(this.getClass).head), Client.APP_JAR -> args.userJar,
@@ -330,8 +416,9 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
     }
 
     // Handle distributed spark conf files(Need more work, now support only spark-defults.conf)
-    // Distribute an archive with Hadoop and Spark configuration for the AM.
-    if (true) {
+    if (false) {
+      // FIXED: old version distribute spark-conf file
+      /*
       val confFileName = "spark-defaults.conf"
       Option(Utils.getContextOrSparkClassLoader.getResource(confFileName)).foreach { url =>
         if (url.getProtocol == "file") {
@@ -348,14 +435,23 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
             linkname, statCache)
         }
       }
+      */
 
       /*
-      val localURI = new URI(createConfArchive().toString)
+      val localURI = createConfArchive().toURI().getPath()
       val localPath = new Path(localURI)
       val linkname = Option(localURI.getFragment()).getOrElse(localPath.getName())
       val destPath = copyRemoteFile(dst, localPath, replication)
+      distCacheMgr.addResource(fs, conf, destPath, localResources, LocalResourceType.ARCHIVE,
+        linkname, statCache)
       */
     }
+    // Distribute an archive with Hadoop and Spark configuration for the AM.
+    val (_, confLocalizedPath) = distribute(createConfArchive().toURI().getPath(),
+      resType = LocalResourceType.ARCHIVE,
+      destName = Some(Client.LOCALIZED_CONF_DIR),
+      appMasterOnly = true)
+    require(confLocalizedPath != null)
 
     UserGroupInformation.getCurrentUser().addCredentials(credentials)
     localResources
@@ -483,8 +579,8 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       env("SPARK_JAVA_OPTS") = value
     }
 
-    // FIXED: add by lifulong
-    env("spark.executor.instances") = numExecutors.toString
+    // FIXED: temp implement by lifulong, comment it
+    //env("spark.executor.instances") = numExecutors.toString
 
     env
   }
@@ -565,7 +661,7 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       " --executor-cores " + args.executorCores +
       // FIXED: comment by lifulong
       // " --num-executors " + args.numExecutors +
-      " --properties-file " + Client.buildPath(YarnSparkHadoopUtil.expandEnvironment(Environment.PWD), "spark-defaults.conf") +
+      " --properties-file " + Client.buildPath(YarnSparkHadoopUtil.expandEnvironment(Environment.PWD), Client.LOCALIZED_CONF_DIR, Client.SPARK_CONF_FILE) +
       " 1> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout" +
       " 2> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr")
 
@@ -625,6 +721,9 @@ object Client {
   val SPARK_JAR: String = "spark.jar"
   val APP_JAR: String = "app.jar"
   val LOG4J_PROP: String = "log4j.properties"
+
+  // URI scheme that identifies local resources
+  val LOCAL_SCHEME = "local"
 
   // FIXED: add by lifulong
   // Subdirectory where the user's Spark and Hadoop config files will be placed.
@@ -689,4 +788,19 @@ object Client {
     components.mkString(Path.SEPARATOR)
   }
 
+  /**
+   * Given a local URI, resolve it and return a qualified local path that corresponds to the URI.
+   * This is used for preparing local resources to be included in the container launch context.
+   */
+  private def getQualifiedLocalPath(localURI: URI, hadoopConf: Configuration): Path = {
+    val qualifiedURI =
+      if (localURI.getScheme == null) {
+        // If not specified, assume this is in the local filesystem to keep the behavior
+        // consistent with that of Hadoop
+        new URI(FileSystem.getLocal(hadoopConf).makeQualified(new Path(localURI)).toString)
+      } else {
+        localURI
+      }
+    new Path(qualifiedURI)
+  }
 }
