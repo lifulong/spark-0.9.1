@@ -13,11 +13,16 @@ This README file only contains basic setup instructions.
 
 To build a spark distribute run command below:
 
-bash make-distribution.sh
+    bash make-distribution.sh
+
+Or
+
+    set MAVEN_OPTS= -Xms128m -Xmx512m
+    mvn package
 
 Need yarn support:
 
-bash make-distribution.sh --with-yarn
+    bash make-distribution.sh --with-yarn
 
 ## Building
 

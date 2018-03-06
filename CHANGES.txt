@@ -2,15 +2,18 @@ Spark Change Log
 ----------------
 
 TODO:
+	update test case
         add more rdd memory use log
 	support kvro
+	eliminate compile warning
+	change copyToRemote to distribute api
 
 2018-03-06 Run Python driver programs on cluster
 2018-03-06 Deliver parameter by spark conf, not env
 2018-03-01 Support config executor instance number by spark-submit
 2018-02-28 Support config executor JAVA_OPTS
 2018-02-27 Don't require SPARK_YARN_APP_JAR
-2018-02-27 support spark-submit command
+2018-02-27 Support spark-submit command
 
 Release 0.9.1
 
