@@ -43,13 +43,12 @@ import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.util.Utils
 
 
-class ApplicationMaster(args: ApplicationMasterArguments, conf: Configuration,
-                        sparkConf: SparkConf) extends Logging {
+class ApplicationMaster(args: ApplicationMasterArguments) extends Logging {
 
-  def this(args: ApplicationMasterArguments, sparkConf: SparkConf) =
-    this(args, new Configuration(), sparkConf)
+  //def this(args: ApplicationMasterArguments, sparkConf: SparkConf) =
+  //  this(args, new Configuration(), sparkConf)
 
-  def this(args: ApplicationMasterArguments) = this(args, new SparkConf())
+  //def this(args: ApplicationMasterArguments) = this(args, new SparkConf())
 
   // Load the properties file with the Spark configuration and set entries as system properties,
   // so that user code run inside the AM also has access to them.
@@ -61,7 +60,9 @@ class ApplicationMaster(args: ApplicationMasterArguments, conf: Configuration,
     }
   }
 
+  private val conf: Configuration = new Configuration()
   private val yarnConf: YarnConfiguration = new YarnConfiguration(conf)
+  private val sparkConf: SparkConf = new SparkConf()
   private var appAttemptId: ApplicationAttemptId = _
   private var userThread: Thread = _
   private val fs = FileSystem.get(yarnConf)
@@ -173,6 +174,7 @@ class ApplicationMaster(args: ApplicationMasterArguments, conf: Configuration,
           // Copy
           var mainArgs: Array[String] = new Array[String](args.userArgs.size)
           args.userArgs.copyToArray(mainArgs, 0, args.userArgs.size)
+	  logInfo("LIFULONG add log, mainArgs@ApplicationMaster:" + mainArgs.mkString("\t"))
           mainMethod.invoke(null, mainArgs)
           // some job script has "System.exit(0)" at the end, for example SparkPi, SparkLR
           // userThread will stop here unless it has uncaught exception thrown out

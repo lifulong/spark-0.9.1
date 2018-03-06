@@ -51,13 +51,6 @@ class ApplicationMasterArguments(val args: Array[String]) {
           userArgsBuffer += value
           args = tail
 
-        //FIXED: old version code, not support pyspark client mode (by lifulong)
-        /*
-        case ("--num-executors") :: IntParam(value) :: tail =>
-          numExecutors = value
-          args = tail
-	*/
-
         case ("--executor-memory") :: IntParam(value) :: tail =>
           executorMemory = value
           args = tail
@@ -94,7 +87,6 @@ class ApplicationMasterArguments(val args: Array[String]) {
       "  --class CLASS_NAME     Name of your application's main class (required)\n" +
       "  --args ARGS            Arguments to be passed to your application's main class.\n" +
       "                         Mutliple invocations are possible, each will be passed in order.\n" +
-      //"  --num-executors NUM    Number of executors to start (Default: 2)\n" +
       "  --executor-cores NUM   Number of cores for the executors (Default: 1)\n" +
       "  --executor-memory MEM  Memory per Executor (e.g. 1000M, 2G) (Default: 1G)\n")
     System.exit(exitCode)

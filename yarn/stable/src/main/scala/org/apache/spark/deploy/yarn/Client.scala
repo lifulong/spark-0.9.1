@@ -659,8 +659,6 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       userArgsToString(args) +
       " --executor-memory " + args.executorMemory +
       " --executor-cores " + args.executorCores +
-      // FIXED: comment by lifulong
-      // " --num-executors " + args.numExecutors +
       " --properties-file " + Client.buildPath(YarnSparkHadoopUtil.expandEnvironment(Environment.PWD), Client.LOCALIZED_CONF_DIR, Client.SPARK_CONF_FILE) +
       " 1> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout" +
       " 2> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr")

@@ -194,20 +194,20 @@ object SparkSubmit {
       }
     } else if (clusterManager == YARN) {
       childMainClass = "org.apache.spark.deploy.yarn.Client"
-      if (args.isPython) {                                                                                                                  
-        childArgs += ("--primary-py-file", args.primaryResource)                                                                            
-        if (args.pyFiles != null) {                                                                                                         
-          childArgs += ("--py-files", args.pyFiles)                                                                                         
-        }                                                                                                                                   
-        childArgs += ("--class", "org.apache.spark.deploy.PythonRunner")                                                                    
+      if (args.isPython) {
+        childArgs += ("--primary-py-file", args.primaryResource)
+        if (args.pyFiles != null) {
+          childArgs += ("--py-files", args.pyFiles)
+        }
+        childArgs += ("--class", "org.apache.spark.deploy.PythonRunner")
       } else {
         if (args.primaryResource != SPARK_INTERNAL) {
           childArgs += ("--jar", args.primaryResource)
         }
         childArgs += ("--class", args.mainClass)
       }
-      if (args.childArgs != null) {                                                                                                         
-        args.childArgs.foreach { arg => childArgs += ("--arg", arg) }                                                                       
+      if (args.childArgs != null) {
+        args.childArgs.foreach { arg => childArgs += ("--args", arg) }
       }
     }
 
@@ -304,7 +304,7 @@ object SparkSubmit {
         childArgs ++= args.childArgs
       } else if (clusterManager == YARN) {
         for (arg <- args.childArgs) {
-          childArgs += ("--arg", arg)
+          childArgs += ("--args", arg)
         }
       }
     }
@@ -316,8 +316,8 @@ object SparkSubmit {
     
     /*
     // Load any properties specified through --conf and the default properties file                                                         
-    for ((k, v) <- args.sparkProperties) {                                                                                                  
-      sysProps.getOrElseUpdate(k, v)                                                                                                        
+    for ((k, v) <- args.sparkProperties) {
+      sysProps.getOrElseUpdate(k, v)
     }
     */
 
