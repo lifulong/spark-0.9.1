@@ -95,6 +95,9 @@ object SparkEnv extends Logging {
   private val env = new ThreadLocal[SparkEnv]
   @volatile private var lastSetSparkEnv : SparkEnv = _
 
+  private[spark] val driverActorSystemName = "sparkDriver"
+  private[spark] val executorActorSystemName = "sparkExecutor"
+
   def set(e: SparkEnv) {
 	  lastSetSparkEnv = e
     env.set(e)

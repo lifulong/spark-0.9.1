@@ -19,8 +19,9 @@ package org.apache.spark
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.HashMap
+import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 
-import java.io.{ObjectInputStream, ObjectOutputStream, IOException}
+import org.apache.spark.util.Utils
 
 /**
  * Configuration for a Spark application. Used to set various Spark parameters as key-value pairs.
@@ -156,6 +157,40 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging {
     settings.getOrElse(key, defaultValue)
   }
 
+  /**
+    * Get a time parameter as seconds; throws a NoSuchElementException if it's not set. If no
+    * suffix is provided then seconds are assumed.
+    * @throws NoSuchElementException
+    */
+  def getTimeAsSeconds(key: String): Long = {
+    Utils.timeStringAsSeconds(get(key))
+  }
+
+  /**
+    * Get a time parameter as seconds, falling back to a default if not set. If no
+    * suffix is provided then seconds are assumed.
+    */
+  def getTimeAsSeconds(key: String, defaultValue: String): Long = {
+    Utils.timeStringAsSeconds(get(key, defaultValue))
+  }
+
+  /**
+    * Get a time parameter as milliseconds; throws a NoSuchElementException if it's not set. If no
+    * suffix is provided then milliseconds are assumed.
+    * @throws NoSuchElementException
+    */
+  def getTimeAsMs(key: String): Long = {
+    Utils.timeStringAsMs(get(key))
+  }
+
+  /**
+    * Get a time parameter as milliseconds, falling back to a default if not set. If no
+    * suffix is provided then milliseconds are assumed.
+    */
+  def getTimeAsMs(key: String, defaultValue: String): Long = {
+    Utils.timeStringAsMs(get(key, defaultValue))
+  }
+
   /** Get a parameter as an Option */
   def getOption(key: String): Option[String] = {
     settings.get(key)
@@ -209,6 +244,12 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging {
   override def clone: SparkConf = {
     new SparkConf(false).setAll(settings)
   }
+
+  /**
+    * By using this instead of System.getenv(), environment variables can be mocked
+    * in unit tests.
+    */
+  private[spark] def getenv(name: String): String = System.getenv(name)
 
   /**
    * Return a string listing all keys and values, one per line. This is useful to print the

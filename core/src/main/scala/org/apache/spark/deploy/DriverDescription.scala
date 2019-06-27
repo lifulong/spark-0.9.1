@@ -19,7 +19,7 @@ package org.apache.spark.deploy
 
 private[spark] class DriverDescription(
     val jarUrl: String,
-    val mem: Int,
+    val mem: Int,  //TODO
     val cores: Int,
     val supervise: Boolean,
     val command: Command)

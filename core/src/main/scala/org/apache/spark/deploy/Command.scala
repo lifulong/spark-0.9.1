@@ -24,3 +24,12 @@ private[spark] case class Command(
     arguments: Seq[String],
     environment: Map[String, String]) {
 }
+// TODO
+//private[spark] case class Command(
+//     mainClass: String,
+//     arguments: Seq[String],
+//     environment: Map[String, String],
+//     classPathEntries: Seq[String],
+//     libraryPathEntries: Seq[String],
+//     javaOpts: Seq[String]) {
+//}

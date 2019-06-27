@@ -65,9 +65,9 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
   private val distCacheMgr = new ClientDistributedCacheManager()
 
   // Staging directory is private! -> rwx--------
-  val STAGING_DIR_PERMISSION: FsPermission = FsPermission.createImmutable(0700: Short)
+  val STAGING_DIR_PERMISSION: FsPermission = FsPermission.createImmutable(Integer.parseInt("700", 8).toShort)
   // App files are world-wide readable and owner writable -> rw-r--r--
-  val APP_FILE_PERMISSION: FsPermission = FsPermission.createImmutable(0644: Short)
+  val APP_FILE_PERMISSION: FsPermission = FsPermission.createImmutable(Integer.parseInt("644", 8).toShort)
 
   def runApp(): ApplicationId = {
     validateArgs()
@@ -123,10 +123,10 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       (System.getenv("SPARK_JAR") == null) -> "Error: You must set SPARK_JAR environment variable!",
       (args.userJar == null) -> "Error: You must specify a user jar!",
       (args.userClass == null) -> "Error: You must specify a user class!",
-      (args.numWorkers <= 0) -> "Error: You must specify at least 1 worker!",
+      (args.numExecutors <= 0) -> "Error: You must specify at least 1 worker!",
       (args.amMemory <= YarnAllocationHandler.MEMORY_OVERHEAD) -> ("Error: AM memory size must be" +
         "greater than: " + YarnAllocationHandler.MEMORY_OVERHEAD),
-      (args.workerMemory <= YarnAllocationHandler.MEMORY_OVERHEAD) -> ("Error: Worker memory size" +
+      (args.executorMemory <= YarnAllocationHandler.MEMORY_OVERHEAD) -> ("Error: Worker memory size" +
         "must be greater than: " + YarnAllocationHandler.MEMORY_OVERHEAD.toString)
     ).foreach { case(cond, errStr) =>
       if (cond) {
@@ -160,9 +160,9 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
     logInfo("Max mem capabililty of a single resource in this cluster " + maxMem)
 
     // If we have requested more then the clusters max for a single resource then exit.
-    if (args.workerMemory > maxMem) {
+    if (args.executorMemory > maxMem) {
       logError("Required worker memory (%d MB), is above the max threshold (%d MB) of this cluster.".
-        format(args.workerMemory, maxMem))
+        format(args.executorMemory, maxMem))
       System.exit(1)
     }
     val amMem = args.amMemory + YarnAllocationHandler.MEMORY_OVERHEAD
@@ -420,9 +420,9 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
       " --class " + args.userClass +
       " --jar " + args.userJar +
       userArgsToString(args) +
-      " --worker-memory " + args.workerMemory +
-      " --worker-cores " + args.workerCores +
-      " --num-workers " + args.numWorkers +
+      " --executor-memory " + args.executorMemory +
+      " --executor-cores " + args.executorCores +
+      " --num-executors " + args.numExecutors +
       " 1> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout" +
       " 2> " + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr")
 
@@ -495,7 +495,7 @@ object Client {
 
   // Based on code from org.apache.hadoop.mapreduce.v2.util.MRApps
   def populateHadoopClasspath(conf: Configuration, env: HashMap[String, String]) {
-    for (c <- conf.getStrings(YarnConfiguration.YARN_APPLICATION_CLASSPATH)) {
+    for (c <- conf.getStringCollection(YarnConfiguration.YARN_APPLICATION_CLASSPATH)) {
       Apps.addToEnvironment(env, Environment.CLASSPATH.name, c.trim)
     }
   }

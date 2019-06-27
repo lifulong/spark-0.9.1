@@ -21,8 +21,7 @@ import java.security.PrivilegedExceptionAction
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapred.JobConf
-import org.apache.hadoop.security.UserGroupInformation
-
+import org.apache.hadoop.security.{Credentials, UserGroupInformation}
 import org.apache.spark.{SparkContext, SparkException}
 
 import scala.collection.JavaConversions._
@@ -65,6 +64,18 @@ class SparkHadoopUtil {
   def addCredentials(conf: JobConf) {}
 
   def isYarnMode(): Boolean = { false }
+
+  def getCurrentUserCredentials(): Credentials = { null }
+
+  def addCurrentUserCredentials(creds: Credentials) {}
+
+  def addSecretKeyToUserCredentials(key: String, secret: String) {}
+
+  def getSecretKeyFromUserCredentials(key: String): Array[Byte] = { null }
+
+  def loginUserFromKeytab(principalName: String, keytabFilename: String) {
+    UserGroupInformation.loginUserFromKeytab(principalName, keytabFilename)
+  }
 }
 
 object SparkHadoopUtil {

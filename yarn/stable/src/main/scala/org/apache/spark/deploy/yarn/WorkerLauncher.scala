@@ -187,13 +187,13 @@ class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration, spar
       preferredNodeLocationData,
       sparkConf)
 
-    logInfo("Allocating " + args.numWorkers + " workers.")
+    logInfo("Allocating " + args.numExecutors + " workers.")
     // Wait until all containers have finished
     // TODO: This is a bit ugly. Can we make it nicer?
     // TODO: Handle container failure
 
-    yarnAllocator.addResourceRequests(args.numWorkers)
-    while ((yarnAllocator.getNumWorkersRunning < args.numWorkers) && (!driverClosed)) {
+    yarnAllocator.addResourceRequests(args.numExecutors)
+    while ((yarnAllocator.getNumWorkersRunning < args.numExecutors) && (!driverClosed)) {
       yarnAllocator.allocateResources()
       Thread.sleep(100)
     }
@@ -209,7 +209,7 @@ class WorkerLauncher(args: ApplicationMasterArguments, conf: Configuration, spar
     val t = new Thread {
       override def run() {
         while (!driverClosed) {
-          val missingWorkerCount = args.numWorkers - yarnAllocator.getNumWorkersRunning -
+          val missingWorkerCount = args.numExecutors - yarnAllocator.getNumWorkersRunning -
             yarnAllocator.getNumPendingAllocate
           if (missingWorkerCount > 0) {
             logInfo("Allocating %d containers to make up for (potentially) lost containers".

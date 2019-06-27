@@ -18,8 +18,8 @@
 package org.apache.spark.deploy
 
 import scala.collection.mutable.ListBuffer
-
 import org.apache.log4j.Level
+import org.apache.spark.util.Utils
 
 /**
  * Command-line parser for the driver client.
@@ -112,5 +112,9 @@ private[spark] class ClientArguments(args: Array[String]) {
 }
 
 object ClientArguments {
+  val DEFAULT_CORES = 1
+  val DEFAULT_MEMORY = Utils.DEFAULT_DRIVER_MEM_MB // MB
+  val DEFAULT_SUPERVISE = false
+
   def isValidJarUrl(s: String) = s.matches("(.+):(.+)jar")
 }

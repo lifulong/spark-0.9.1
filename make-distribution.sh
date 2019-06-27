@@ -56,7 +56,7 @@ VERSION=$(echo "${VERSIONSTRING}" | tail -1 | cut -f 2 | sed 's/^\([a-zA-Z0-9.-]
 echo "Version is ${VERSION}"
 
 # Initialize defaults
-SPARK_HADOOP_VERSION=2.2.0
+SPARK_HADOOP_VERSION=2.7.2
 SPARK_YARN=false
 SPARK_TACHYON=false
 MAKE_TGZ=false
@@ -105,7 +105,9 @@ export SPARK_HADOOP_VERSION
 export SPARK_YARN
 cd $FWDIR
 
-"sbt/sbt" "assembly/assembly"
+#"sbt/sbt" "assembly/assembly"
+export MAVEN_OPTS="-Xmx2048m -XX:MaxPermSize=512m"
+mvn -Pyarn -Phadoop-2.7 -Dhadoop.version=2.7.2 -DskipTests clean package
 
 # Make directories
 rm -rf "$DISTDIR"

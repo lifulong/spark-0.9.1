@@ -66,7 +66,7 @@ class ApplicationMaster(args: ApplicationMasterArguments, conf: Configuration,
 
   // Default to numWorkers * 2, with minimum of 3
   private val maxNumWorkerFailures = sparkConf.getInt("spark.yarn.max.worker.failures",
-    math.max(args.numWorkers * 2, 3))
+    math.max(args.numExecutors * 2, 3))
 
   private var registered = false
 
@@ -229,13 +229,13 @@ class ApplicationMaster(args: ApplicationMasterArguments, conf: Configuration,
 
   private def allocateWorkers() {
     try {
-      logInfo("Allocating " + args.numWorkers + " workers.")
+      logInfo("Allocating " + args.numExecutors + " workers.")
       // Wait until all containers have finished
       // TODO: This is a bit ugly. Can we make it nicer?
       // TODO: Handle container failure
-      yarnAllocator.addResourceRequests(args.numWorkers)
+      yarnAllocator.addResourceRequests(args.numExecutors)
       // Exits the loop if the user thread exits.
-      while (yarnAllocator.getNumWorkersRunning < args.numWorkers && userThread.isAlive) {
+      while (yarnAllocator.getNumWorkersRunning < args.numExecutors && userThread.isAlive) {
         if (yarnAllocator.getNumWorkersFailed >= maxNumWorkerFailures) {
           finishApplicationMaster(FinalApplicationStatus.FAILED,
             "max number of worker failures reached")
@@ -279,7 +279,7 @@ class ApplicationMaster(args: ApplicationMasterArguments, conf: Configuration,
             finishApplicationMaster(FinalApplicationStatus.FAILED,
               "max number of worker failures reached")
           }
-          val missingWorkerCount = args.numWorkers - yarnAllocator.getNumWorkersRunning -
+          val missingWorkerCount = args.numExecutors - yarnAllocator.getNumWorkersRunning -
             yarnAllocator.getNumPendingAllocate
           if (missingWorkerCount > 0) {
             logInfo("Allocating %d containers to make up for (potentially) lost containers".

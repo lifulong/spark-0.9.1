@@ -99,13 +99,17 @@
     <module>external/zeromq</module>
     <module>external/mqtt</module>
     <module>examples</module>
+
+    <!--<module>yarn</module>-->
+    <!--<module>yarn/stable</module>-->
+
   </modules>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-    <java.version>1.6</java.version>
+    <java.version>1.7</java.version>
 
     <scala.version>2.10.3</scala.version>
     <scala.binary.version>2.10</scala.binary.version>
@@ -114,10 +118,16 @@
     <akka.version>2.2.3-shaded-protobuf</akka.version>
     <slf4j.version>1.7.2</slf4j.version>
     <log4j.version>1.2.17</log4j.version>
-    <hadoop.version>2.2.0</hadoop.version>
+    <hadoop.version>2.7.2</hadoop.version>
     <protobuf.version>2.4.1</protobuf.version>
-    <yarn.version>2.2.0</yarn.version>
+    <yarn.version>2.7.2</yarn.version>
     <hbase.version>0.94.6</hbase.version>
+    <commons-lang3.version>3.3.2</commons-lang3.version>
+    <ivy.version>2.4.0</ivy.version>
+    <fasterxml.jackson.version>2.4.4</fasterxml.jackson.version>
+    <jetty.version>8.1.19.v20160209</jetty.version>
+    <orbit.version>3.0.0.v201112011016</orbit.version>
+    <codehaus.jackson.version>1.8.8</codehaus.jackson.version>
 
     <PermGen>64m</PermGen>
     <MaxPermGen>512m</MaxPermGen>
@@ -155,10 +165,50 @@
 
   <dependencyManagement>
     <dependencies>
+      <!-- Shaded deps marked as provided. These are promoted to compile scope
+     in the modules where we want the shaded classes to appear in the
+     associated jar. -->
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-http</artifactId>
+        <version>${jetty.version}</version>
+        <!--<scope>provided</scope>-->
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-continuation</artifactId>
+        <version>${jetty.version}</version>
+        <!--<scope>provided</scope>-->
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-servlet</artifactId>
+        <version>${jetty.version}</version>
+        <!--<scope>provided</scope>-->
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-util</artifactId>
+        <version>${jetty.version}</version>
+        <!--<scope>provided</scope>-->
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-security</artifactId>
+        <version>${jetty.version}</version>
+        <!--<scope>provided</scope>-->
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-plus</artifactId>
+        <version>${jetty.version}</version>
+        <!--<scope>provided</scope>-->
+      </dependency>
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-server</artifactId>
-        <version>7.6.8.v20121106</version>
+        <version>${jetty.version}</version>
+        <!--<scope>provided</scope>-->
       </dependency>
       <dependency>
         <groupId>com.google.guava</groupId>
@@ -369,12 +419,6 @@
         <version>3.1</version>
         <scope>test</scope>
       </dependency>
-     <dependency>
-        <groupId>org.mockito</groupId>
-        <artifactId>mockito-all</artifactId>
-        <version>1.8.5</version>
-        <scope>test</scope>
-      </dependency>
       <dependency>
         <groupId>org.scalacheck</groupId>
         <artifactId>scalacheck_${scala.binary.version}</artifactId>
@@ -516,6 +560,39 @@
             <artifactId>netty</artifactId>
           </exclusion>
         </exclusions>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>${fasterxml.jackson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-annotations</artifactId>
+        <version>${fasterxml.jackson.version}</version>
+      </dependency>
+      <!-- Guava is excluded because of SPARK-6149.  The Guava version referenced in this module is
+           15.0, which causes runtime incompatibility issues. -->
+      <dependency>
+        <groupId>com.fasterxml.jackson.module</groupId>
+        <artifactId>jackson-module-scala_${scala.binary.version}</artifactId>
+        <version>${fasterxml.jackson.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+      <dependency>
+        <groupId>org.codehaus.jackson</groupId>
+        <artifactId>jackson-xc</artifactId>
+        <version>${codehaus.jackson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.codehaus.jackson</groupId>
+        <artifactId>jackson-jaxrs</artifactId>
+        <version>${codehaus.jackson.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -735,7 +812,7 @@
       <properties>
         <hadoop.major.version>2</hadoop.major.version>
         <!-- 0.23.* is same as 2.0.* - except hardened to run production jobs -->
-        <hadoop.version>2.2.0</hadoop.version>
+        <hadoop.version>2.7.2</hadoop.version>
         <!--<hadoop.version>2.0.5-alpha</hadoop.version> -->
       </properties>
       <modules>
@@ -747,7 +824,7 @@
       <id>yarn</id>
       <properties>
         <hadoop.major.version>2</hadoop.major.version>
-        <hadoop.version>2.2.0</hadoop.version>
+        <hadoop.version>2.7.2</hadoop.version>
         <protobuf.version>2.5.0</protobuf.version>
       </properties>
       <modules>

@@ -18,33 +18,45 @@
 package org.apache.spark.util
 
 import java.io._
-import java.net.{InetAddress, URL, URI, NetworkInterface, Inet4Address}
-import java.util.{Locale, Random, UUID}
+import java.net._
+import java.util.{Locale, Properties, Random, UUID}
 import java.util.concurrent.{ConcurrentHashMap, Executors, ThreadPoolExecutor}
 
 import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.collection.Map
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
 import scala.reflect.ClassTag
-
 import com.google.common.io.Files
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{Path, FileSystem, FileUtil}
+import org.apache.hadoop.fs.{FileSystem, FileUtil, Path}
 import org.apache.hadoop.io._
-
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, SerializerInstance}
 import org.apache.spark.deploy.SparkHadoopUtil
 import java.nio.ByteBuffer
-import org.apache.spark.{SparkConf, SparkException, Logging}
+
+import org.apache.commons.lang3.SystemUtils
+import org.apache.hadoop.security.UserGroupInformation
+import org.apache.spark.util.Utils.{isBindCollision, isWindows, portMaxRetries}
+import org.apache.spark._
+import org.eclipse.jetty.util.MultiException
+
+import scala.util.Try
+import scala.util.control.ControlThrowable
 
 
 /**
  * Various utility methods used by Spark.
  */
 private[spark] object Utils extends Logging {
+
+  /**
+    * Define a default value for driver memory here since this value is referenced across the code
+    * base and nearly all files already use Utils.scala
+    */
+  val DEFAULT_DRIVER_MEM_MB: Long = 1024
 
   /** Serialize an object using Java serialization */
   def serialize[T](o: T): Array[Byte] = {
@@ -505,31 +517,6 @@ private[spark] object Utils extends Logging {
   }
 
   /**
-   * Convert a quantity in bytes to a human-readable string such as "4.0 MB".
-   */
-  def bytesToString(size: Long): String = {
-    val TB = 1L << 40
-    val GB = 1L << 30
-    val MB = 1L << 20
-    val KB = 1L << 10
-
-    val (value, unit) = {
-      if (size >= 2*TB) {
-        (size.asInstanceOf[Double] / TB, "TB")
-      } else if (size >= 2*GB) {
-        (size.asInstanceOf[Double] / GB, "GB")
-      } else if (size >= 2*MB) {
-        (size.asInstanceOf[Double] / MB, "MB")
-      } else if (size >= 2*KB) {
-        (size.asInstanceOf[Double] / KB, "KB")
-      } else {
-        (size.asInstanceOf[Double], "B")
-      }
-    }
-    "%.1f %s".formatLocal(Locale.US, value, unit)
-  }
-
-  /**
    * Returns a human-readable string representing a duration such as "35ms"
    */
   def msDurationToString(ms: Long): String = {
@@ -812,6 +799,507 @@ private[spark] object Utils extends Logging {
   }
 
   /**
+    * Load default Spark properties from the given file. If no file is provided,
+    * use the common defaults file. This mutates state in the given SparkConf and
+    * in this JVM's system properties if the config specified in the file is not
+    * already set. Return the path of the properties file used.
+    */
+  def loadDefaultSparkProperties(conf: SparkConf, filePath: String = null): String = {
+    val path = Option(filePath).getOrElse(getDefaultPropertiesFile())
+    Option(path).foreach { confFile =>
+      getPropertiesFromFile(confFile).filter { case (k, v) =>
+        k.startsWith("spark.")
+      }.foreach { case (k, v) =>
+        conf.setIfMissing(k, v)
+        sys.props.getOrElseUpdate(k, v)
+      }
+    }
+    path
+  }
+
+  /** Load properties present in the given file. */
+  def getPropertiesFromFile(filename: String): Map[String, String] = {
+    val file = new File(filename)
+    require(file.exists(), s"Properties file $file does not exist")
+    require(file.isFile(), s"Properties file $file is not a normal file")
+
+    val inReader = new InputStreamReader(new FileInputStream(file), "UTF-8")
+    try {
+      val properties = new Properties()
+      properties.load(inReader)
+      properties.stringPropertyNames().asScala.map(
+        k => (k, properties.getProperty(k).trim)).toMap
+    } catch {
+      case e: IOException =>
+        throw new SparkException(s"Failed when loading Spark properties from $filename", e)
+    } finally {
+      inReader.close()
+    }
+  }
+
+  /** Return the path of the default Spark properties file. */
+  def getDefaultPropertiesFile(env: Map[String, String] = sys.env): String = {
+    env.get("SPARK_CONF_DIR")
+      .orElse(env.get("SPARK_HOME").map { t => s"$t${File.separator}conf" })
+      .map { t => new File(s"$t${File.separator}spark-defaults.conf")}
+      .filter(_.isFile)
+      .map(_.getAbsolutePath)
+      .orNull
+  }
+
+  /**
+    * Whether the underlying operating system is Windows.
+    */
+  val isWindows = SystemUtils.IS_OS_WINDOWS
+
+  /**
+    * Whether the underlying operating system is Mac OS X.
+    */
+  val isMac = SystemUtils.IS_OS_MAC_OSX
+
+  /**
+    * Pattern for matching a Windows drive, which contains only a single alphabet character.
+    */
+  val windowsDrive = "([a-zA-Z])".r
+
+  /**
+    * Indicates whether Spark is currently running unit tests.
+    */
+  def isTesting: Boolean = {
+    sys.env.contains("SPARK_TESTING") || sys.props.contains("spark.testing")
+  }
+
+  /**
+    * Strip the directory from a path name
+    */
+  def stripDirectory(path: String): String = {
+    new File(path).getName
+  }
+
+  /**
+    * Return a well-formed URI for the file described by a user input string.
+    *
+    * If the supplied path does not contain a scheme, or is a relative path, it will be
+    * converted into an absolute path with a file:// scheme.
+    */
+  def resolveURI(path: String): URI = {
+    try {
+      val uri = new URI(path)
+      if (uri.getScheme() != null) {
+        return uri
+      }
+      // make sure to handle if the path has a fragment (applies to yarn
+      // distributed cache)
+      if (uri.getFragment() != null) {
+        val absoluteURI = new File(uri.getPath()).getAbsoluteFile().toURI()
+        return new URI(absoluteURI.getScheme(), absoluteURI.getHost(), absoluteURI.getPath(),
+          uri.getFragment())
+      }
+    } catch {
+      case e: URISyntaxException =>
+    }
+    new File(path).getAbsoluteFile().toURI()
+  }
+
+  /** Resolve a comma-separated list of paths. */
+  def resolveURIs(paths: String): String = {
+    if (paths == null || paths.trim.isEmpty) {
+      ""
+    } else {
+      paths.split(",").map { p => Utils.resolveURI(p) }.mkString(",")
+    }
+  }
+
+  /** Return all non-local paths from a comma-separated list of paths. */
+  def nonLocalPaths(paths: String, testWindows: Boolean = false): Array[String] = {
+    val windows = isWindows || testWindows
+    if (paths == null || paths.trim.isEmpty) {
+      Array.empty
+    } else {
+      paths.split(",").filter { p =>
+        val uri = resolveURI(p)
+        Option(uri.getScheme).getOrElse("file") match {
+          case windowsDrive(d) if windows => false
+          case "local" | "file" => false
+          case _ => true
+        }
+      }
+    }
+  }
+
+  /**
+    * Get the ClassLoader which loaded Spark.
+    */
+  def getSparkClassLoader: ClassLoader = getClass.getClassLoader
+
+  /**
+    * Get the Context ClassLoader on this thread or, if not present, the ClassLoader that
+    * loaded Spark.
+    *
+    * This should be used whenever passing a ClassLoader to Class.ForName or finding the currently
+    * active loader when setting up ClassLoader delegation chains.
+    */
+  def getContextOrSparkClassLoader: ClassLoader =
+    Option(Thread.currentThread().getContextClassLoader).getOrElse(getSparkClassLoader)
+
+  /** Determines whether the provided class is loadable in the current thread. */
+  def classIsLoadable(clazz: String): Boolean = {
+    // scalastyle:off classforname
+    Try { Class.forName(clazz, false, getContextOrSparkClassLoader) }.isSuccess
+    // scalastyle:on classforname
+  }
+
+  // scalastyle:off classforname
+  /** Preferred alternative to Class.forName(className) */
+  def classForName(className: String): Class[_] = {
+    Class.forName(className, true, getContextOrSparkClassLoader)
+    // scalastyle:on classforname
+  }
+
+  /**
+    * Execute the given block, logging and re-throwing any uncaught exception.
+    * This is particularly useful for wrapping code that runs in a thread, to ensure
+    * that exceptions are printed, and to avoid having to catch Throwable.
+    */
+  def logUncaughtExceptions[T](f: => T): T = {
+    try {
+      f
+    } catch {
+      case ct: ControlThrowable =>
+        throw ct
+      case t: Throwable =>
+        logError(s"Uncaught exception in thread ${Thread.currentThread().getName}", t)
+        throw t
+    }
+  }
+
+  /** Executes the given block in a Try, logging any uncaught exceptions. */
+  def tryLog[T](f: => T): Try[T] = {
+    try {
+      val res = f
+      scala.util.Success(res)
+    } catch {
+      case ct: ControlThrowable =>
+        throw ct
+      case t: Throwable =>
+        logError(s"Uncaught exception in thread ${Thread.currentThread().getName}", t)
+        scala.util.Failure(t)
+    }
+  }
+
+  /**
+    * Execute a block of code, then a finally block, but if exceptions happen in
+    * the finally block, do not suppress the original exception.
+    *
+    * This is primarily an issue with `finally { out.close() }` blocks, where
+    * close needs to be called to clean up `out`, but if an exception happened
+    * in `out.write`, it's likely `out` may be corrupted and `out.close` will
+    * fail as well. This would then suppress the original/likely more meaningful
+    * exception from the original `out.write` call.
+    */
+  def tryWithSafeFinally[T](block: => T)(finallyBlock: => Unit): T = {
+    var originalThrowable: Throwable = null
+    try {
+      block
+    } catch {
+      case t: Throwable =>
+        // Purposefully not using NonFatal, because even fatal exceptions
+        // we don't want to have our finallyBlock suppress
+        originalThrowable = t
+        throw originalThrowable
+    } finally {
+      try {
+        finallyBlock
+      } catch {
+        case t: Throwable =>
+          if (originalThrowable != null) {
+            originalThrowable.addSuppressed(t)
+            logWarning(s"Suppressing exception in finally: " + t.getMessage, t)
+            throw originalThrowable
+          } else {
+            throw t
+          }
+      }
+    }
+  }
+
+  /**
+    * Execute a block of code and call the failure callbacks in the catch block. If exceptions occur
+    * in either the catch or the finally block, they are appended to the list of suppressed
+    * exceptions in original exception which is then rethrown.
+    *
+    * This is primarily an issue with `catch { abort() }` or `finally { out.close() }` blocks,
+    * where the abort/close needs to be called to clean up `out`, but if an exception happened
+    * in `out.write`, it's likely `out` may be corrupted and `abort` or `out.close` will
+    * fail as well. This would then suppress the original/likely more meaningful
+    * exception from the original `out.write` call.
+    */
+//  def tryWithSafeFinallyAndFailureCallbacks[T](block: => T)
+//                                              (catchBlock: => Unit = (), finallyBlock: => Unit = ()): T = {
+//    var originalThrowable: Throwable = null
+//    try {
+//      block
+//    } catch {
+//      case cause: Throwable =>
+//        // Purposefully not using NonFatal, because even fatal exceptions
+//        // we don't want to have our finallyBlock suppress
+//        originalThrowable = cause
+//        try {
+//          logError("Aborting task", originalThrowable)
+//          TaskContext.get().asInstanceOf[TaskContextImpl].markTaskFailed(originalThrowable)
+//          catchBlock
+//        } catch {
+//          case t: Throwable =>
+//            originalThrowable.addSuppressed(t)
+//            logWarning(s"Suppressing exception in catch: " + t.getMessage, t)
+//        }
+//        throw originalThrowable
+//    } finally {
+//      try {
+//        finallyBlock
+//      } catch {
+//        case t: Throwable =>
+//          if (originalThrowable != null) {
+//            originalThrowable.addSuppressed(t)
+//            logWarning(s"Suppressing exception in finally: " + t.getMessage, t)
+//            throw originalThrowable
+//          } else {
+//            throw t
+//          }
+//      }
+//    }
+//  }
+
+  /**
+    * Split the comma delimited string of master URLs into a list.
+    * For instance, "spark://abc,def" becomes [spark://abc, spark://def].
+    */
+  def parseStandaloneMasterUrls(masterUrls: String): Array[String] = {
+    masterUrls.stripPrefix("spark://").split(",").map("spark://" + _)
+  }
+
+  /** An identifier that backup masters use in their responses. */
+  val BACKUP_STANDALONE_MASTER_PREFIX = "Current state is not alive"
+
+  /** Return true if the response message is sent from a backup Master on standby. */
+  def responseFromBackup(msg: String): Boolean = {
+    msg.startsWith(BACKUP_STANDALONE_MASTER_PREFIX)
+  }
+
+  /** Return the class name of the given object, removing all dollar signs */
+  def getFormattedClassName(obj: AnyRef): String = {
+    obj.getClass.getSimpleName.replace("$", "")
+  }
+
+  /**
+    * Maximum number of retries when binding to a port before giving up.
+    */
+  def portMaxRetries(conf: SparkConf): Int = {
+    val maxRetries = conf.getOption("spark.port.maxRetries").map(_.toInt)
+    if (conf.contains("spark.testing")) {
+      // Set a higher number of retries for tests...
+      maxRetries.getOrElse(100)
+    } else {
+      maxRetries.getOrElse(16)
+    }
+  }
+
+  /**
+    * Attempt to start a service on the given port, or fail after a number of attempts.
+    * Each subsequent attempt uses 1 + the port used in the previous attempt (unless the port is 0).
+    *
+    * @param startPort The initial port to start the service on.
+    * @param startService Function to start service on a given port.
+    *                     This is expected to throw java.net.BindException on port collision.
+    * @param conf A SparkConf used to get the maximum number of retries when binding to a port.
+    * @param serviceName Name of the service.
+    * @return (service: T, port: Int)
+    */
+  def startServiceOnPort[T](
+                             startPort: Int,
+                             startService: Int => (T, Int),
+                             conf: SparkConf,
+                             serviceName: String = ""): (T, Int) = {
+
+    require(startPort == 0 || (1024 <= startPort && startPort < 65536),
+      "startPort should be between 1024 and 65535 (inclusive), or 0 for a random free port.")
+
+    val serviceString = if (serviceName.isEmpty) "" else s" '$serviceName'"
+    val maxRetries = portMaxRetries(conf)
+    for (offset <- 0 to maxRetries) {
+      // Do not increment port if startPort is 0, which is treated as a special port
+      val tryPort = if (startPort == 0) {
+        startPort
+      } else {
+        // If the new port wraps around, do not try a privilege port
+        ((startPort + offset - 1024) % (65536 - 1024)) + 1024
+      }
+      try {
+        val (service, port) = startService(tryPort)
+        logInfo(s"Successfully started service$serviceString on port $port.")
+        return (service, port)
+      } catch {
+        case e: Exception if isBindCollision(e) =>
+          if (offset >= maxRetries) {
+            val exceptionMessage = s"${e.getMessage}: Service$serviceString failed after " +
+              s"$maxRetries retries! Consider explicitly setting the appropriate port for the " +
+              s"service$serviceString (for example spark.ui.port for SparkUI) to an available " +
+              "port or increasing spark.port.maxRetries."
+            val exception = new BindException(exceptionMessage)
+            // restore original stack trace
+            exception.setStackTrace(e.getStackTrace)
+            throw exception
+          }
+          logWarning(s"Service$serviceString could not bind on port $tryPort. " +
+            s"Attempting port ${tryPort + 1}.")
+      }
+    }
+    // Should never happen
+    throw new SparkException(s"Failed to start service$serviceString on port $startPort")
+  }
+
+  /**
+    * Return whether the exception is caused by an address-port collision when binding.
+    */
+  def isBindCollision(exception: Throwable): Boolean = {
+    exception match {
+      case e: BindException =>
+        if (e.getMessage != null) {
+          return true
+        }
+        isBindCollision(e.getCause)
+      case e: MultiException =>
+        e.getThrowables.asScala.exists(isBindCollision)
+      case e: Exception => isBindCollision(e.getCause)
+      case _ => false
+    }
+  }
+
+  /**
+    * Return a pair of host and port extracted from the `sparkUrl`.
+    *
+    * A spark url (`spark://host:port`) is a special URI that its scheme is `spark` and only contains
+    * host and port.
+    *
+    * @throws SparkException if `sparkUrl` is invalid.
+    */
+  def extractHostPortFromSparkUrl(sparkUrl: String): (String, Int) = {
+    try {
+      val uri = new java.net.URI(sparkUrl)
+      val host = uri.getHost
+      val port = uri.getPort
+      if (uri.getScheme != "spark" ||
+        host == null ||
+        port < 0 ||
+        (uri.getPath != null && !uri.getPath.isEmpty) || // uri.getPath returns "" instead of null
+        uri.getFragment != null ||
+        uri.getQuery != null ||
+        uri.getUserInfo != null) {
+        throw new SparkException("Invalid master URL: " + sparkUrl)
+      }
+      (host, port)
+    } catch {
+      case e: java.net.URISyntaxException =>
+        throw new SparkException("Invalid master URL: " + sparkUrl, e)
+    }
+  }
+
+  /**
+    * Returns the current user name. This is the currently logged in user, unless that's been
+    * overridden by the `SPARK_USER` environment variable.
+    */
+  def getCurrentUserName(): String = {
+    Option(System.getenv("SPARK_USER"))
+      .getOrElse(UserGroupInformation.getCurrentUser().getShortUserName())
+  }
+
+  /**
+    * Convert a time parameter such as (50s, 100ms, or 250us) to microseconds for internal use. If
+    * no suffix is provided, the passed number is assumed to be in ms.
+    */
+  def timeStringAsMs(str: String): Long = {
+    JavaUtils.timeStringAsMs(str)
+  }
+
+  /**
+    * Convert a time parameter such as (50s, 100ms, or 250us) to seconds for internal use. If
+    * no suffix is provided, the passed number is assumed to be in seconds.
+    */
+  def timeStringAsSeconds(str: String): Long = {
+    JavaUtils.timeStringAsSec(str)
+  }
+
+  /**
+    * Convert a passed byte string (e.g. 50b, 100k, or 250m) to bytes for internal use.
+    *
+    * If no suffix is provided, the passed number is assumed to be in bytes.
+    */
+  def byteStringAsBytes(str: String): Long = {
+    JavaUtils.byteStringAsBytes(str)
+  }
+
+  /**
+    * Convert a passed byte string (e.g. 50b, 100k, or 250m) to kibibytes for internal use.
+    *
+    * If no suffix is provided, the passed number is assumed to be in kibibytes.
+    */
+  def byteStringAsKb(str: String): Long = {
+    JavaUtils.byteStringAsKb(str)
+  }
+
+  /**
+    * Convert a passed byte string (e.g. 50b, 100k, or 250m) to mebibytes for internal use.
+    *
+    * If no suffix is provided, the passed number is assumed to be in mebibytes.
+    */
+  def byteStringAsMb(str: String): Long = {
+    JavaUtils.byteStringAsMb(str)
+  }
+
+  /**
+    * Convert a passed byte string (e.g. 50b, 100k, or 250m, 500g) to gibibytes for internal use.
+    *
+    * If no suffix is provided, the passed number is assumed to be in gibibytes.
+    */
+  def byteStringAsGb(str: String): Long = {
+    JavaUtils.byteStringAsGb(str)
+  }
+
+  /**
+    * Convert a quantity in bytes to a human-readable string such as "4.0 MB".
+    */
+  def bytesToString(size: Long): String = {
+    val TB = 1L << 40
+    val GB = 1L << 30
+    val MB = 1L << 20
+    val KB = 1L << 10
+
+    val (value, unit) = {
+      if (size >= 2*TB) {
+        (size.asInstanceOf[Double] / TB, "TB")
+      } else if (size >= 2*GB) {
+        (size.asInstanceOf[Double] / GB, "GB")
+      } else if (size >= 2*MB) {
+        (size.asInstanceOf[Double] / MB, "MB")
+      } else if (size >= 2*KB) {
+        (size.asInstanceOf[Double] / KB, "KB")
+      } else {
+        (size.asInstanceOf[Double], "B")
+      }
+    }
+    "%.1f %s".formatLocal(Locale.US, value, unit)
+  }
+
+  /**
+    * Convert all spark properties set in the given SparkConf to a sequence of java options.
+    */
+  def sparkJavaOpts(conf: SparkConf, filterKey: (String => Boolean) = _ => true): Seq[String] = {
+    conf.getAll
+      .filter { case (k, _) => filterKey(k) }
+      .map { case (k, v) => s"-D$k=$v" }
+  }
+
+  /**
    * Method executed for repeating a task for side effects.
    * Unlike a for comprehension, it permits JVM JIT optimization
    */
@@ -834,4 +1322,35 @@ private[spark] object Utils extends Logging {
     System.currentTimeMillis - start
   }
 
+}
+
+/**
+  * A utility class to redirect the child process's stdout or stderr.
+  */
+private[spark] class RedirectThread(
+                                     in: InputStream,
+                                     out: OutputStream,
+                                     name: String,
+                                     propagateEof: Boolean = false)
+  extends Thread(name) {
+
+  setDaemon(true)
+  override def run() {
+    scala.util.control.Exception.ignoring(classOf[IOException]) {
+      // FIXME: We copy the stream on the level of bytes to avoid encoding problems.
+      Utils.tryWithSafeFinally {
+        val buf = new Array[Byte](1024)
+        var len = in.read(buf)
+        while (len != -1) {
+          out.write(buf, 0, len)
+          out.flush()
+          len = in.read(buf)
+        }
+      } {
+        if (propagateEof) {
+          out.close()
+        }
+      }
+    }
+  }
 }

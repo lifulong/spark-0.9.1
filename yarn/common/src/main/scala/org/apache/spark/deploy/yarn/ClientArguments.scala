@@ -33,9 +33,9 @@ class ClientArguments(val args: Array[String], val sparkConf: SparkConf) {
   var userJar: String = null
   var userClass: String = null
   var userArgs: Seq[String] = Seq[String]()
-  var workerMemory = 1024 // MB
-  var workerCores = 1
-  var numWorkers = 2
+  var executorMemory = 1024 // MB
+  var executorCores = 1
+  var numExecutors = 2
   var amQueue = sparkConf.get("QUEUE", "default")
   var amMemory: Int = 512 // MB
   var amClass: String = "org.apache.spark.deploy.yarn.ApplicationMaster"
@@ -71,20 +71,20 @@ class ClientArguments(val args: Array[String], val sparkConf: SparkConf) {
           amClass = value
           args = tail
 
-        case ("--master-memory") :: MemoryParam(value) :: tail =>
+        case ("--driver-memory") :: MemoryParam(value) :: tail =>
           amMemory = value
           args = tail
 
-        case ("--num-workers") :: IntParam(value) :: tail =>
-          numWorkers = value
+        case ("--num-executors") :: IntParam(value) :: tail =>
+          numExecutors = value
           args = tail
 
-        case ("--worker-memory") :: MemoryParam(value) :: tail =>
-          workerMemory = value
+        case ("--executor-memory") :: MemoryParam(value) :: tail =>
+          executorMemory = value
           args = tail
 
-        case ("--worker-cores") :: IntParam(value) :: tail =>
-          workerCores = value
+        case ("--executor-cores") :: IntParam(value) :: tail =>
+          executorCores = value
           args = tail
 
         case ("--queue") :: value :: tail =>
@@ -133,11 +133,11 @@ class ClientArguments(val args: Array[String], val sparkConf: SparkConf) {
       "  --class CLASS_NAME         Name of your application's main class (required)\n" +
       "  --args ARGS                Arguments to be passed to your application's main class.\n" +
       "                             Mutliple invocations are possible, each will be passed in order.\n" +
-      "  --num-workers NUM          Number of workers to start (Default: 2)\n" +
-      "  --worker-cores NUM         Number of cores for the workers (Default: 1). This is unsused right now.\n" +
+      "  --num-executors NUM          Number of workers to start (Default: 2)\n" +
+      "  --executor-cores NUM         Number of cores for the workers (Default: 1). This is unsused right now.\n" +
       "  --master-class CLASS_NAME  Class Name for Master (Default: spark.deploy.yarn.ApplicationMaster)\n" +
-      "  --master-memory MEM        Memory for Master (e.g. 1000M, 2G) (Default: 512 Mb)\n" +
-      "  --worker-memory MEM        Memory per Worker (e.g. 1000M, 2G) (Default: 1G)\n" +
+      "  --driver-memory MEM        Memory for Master (e.g. 1000M, 2G) (Default: 512 Mb)\n" +
+      "  --executor-memory MEM        Memory per Worker (e.g. 1000M, 2G) (Default: 1G)\n" +
       "  --name NAME                The name of your application (Default: Spark)\n" +
       "  --queue QUEUE              The hadoop queue to use for allocation requests (Default: 'default')\n" +
       "  --addJars jars             Comma separated list of local jars that want SparkContext.addJar to work with.\n" +
