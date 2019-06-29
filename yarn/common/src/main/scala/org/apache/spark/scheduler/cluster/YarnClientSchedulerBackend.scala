@@ -56,7 +56,7 @@ private[spark] class YarnClientSchedulerBackend(
     argsArrayBuf += (
       "--class", "notused",
       "--jar", userJar,
-      "--args", hostport,
+      "--arg", hostport,
       "--master-class", "org.apache.spark.deploy.yarn.WorkerLauncher"
     )
 

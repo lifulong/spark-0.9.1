@@ -349,7 +349,7 @@ class Client(args: ClientArguments, conf: Configuration, sparkConf: SparkConf)
   }
 
   def userArgsToString(clientArgs: ClientArguments): String = {
-    val prefix = " --args "
+    val prefix = " --arg "
     val args = clientArgs.userArgs
     val retval = new StringBuilder()
     for (arg <- args) {

@@ -151,6 +151,7 @@ class ApplicationMaster(args: ApplicationMasterArguments, conf: Configuration,
 
   private def startUserClass(): Thread = {
     logInfo("Starting the user JAR in a separate Thread")
+    logInfo("ApplicationMaster userClass: " + args.userClass)
     val mainMethod = Class.forName(
       args.userClass,
       false /* initialize */ ,

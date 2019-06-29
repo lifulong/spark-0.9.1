@@ -107,7 +107,8 @@ cd $FWDIR
 
 #"sbt/sbt" "assembly/assembly"
 export MAVEN_OPTS="-Xmx2048m -XX:MaxPermSize=512m"
-mvn -Pyarn -Phadoop-2.7 -Dhadoop.version=2.7.2 -DskipTests clean package
+#mvn -Pyarn -Phadoop-2.7 -Dhadoop.version=2.7.2 -DskipTests clean package
+mvn -Pyarn -Phadoop-2.7 -Dhadoop.version=2.7.2 -DskipTests package
 
 # Make directories
 rm -rf "$DISTDIR"
