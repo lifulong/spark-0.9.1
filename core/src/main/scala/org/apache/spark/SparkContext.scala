@@ -1240,7 +1240,7 @@ object SparkContext {
         }
         scheduler
 
-      case "yarn-standalone" =>
+      case "yarn-standalone" | "yarn-cluster" =>
         val scheduler = try {
           val clazz = Class.forName("org.apache.spark.scheduler.cluster.YarnClusterScheduler")
           val cons = clazz.getConstructor(classOf[SparkContext])
